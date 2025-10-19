@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WTI Crude Oil Price Prediction</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .upload-section, .training-section, .results-section {
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .status.info {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+        .status.error {
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+        .status.success {
+            background-color: #e8f5e8;
+            border-left: 4px solid #4caf50;
+        }
+        button {
+            background-color: #4caf50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        progress {
+            width: 100%;
+            height: 20px;
+            margin: 10px 0;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WTI Crude Oil Price Prediction</h1>
+        <p>Upload your CSV file containing stock market data to train an LSTM model for WTI crude oil price prediction.</p>
+        
+        <div class="upload-section">
+            <h2>1. Upload Data</h2>
+            <input type="file" id="csvFile" accept=".csv">
+            <div id="fileStatus" class="status info">Please select a CSV file</div>
+        </div>
+
+        <div class="training-section">
+            <h2>2. Train Model</h2>
+            <button id="trainBtn">Train Model</button>
+            <progress id="trainingProgress" value="0" max="100"></progress>
+            <div id="trainingStatus" class="status info">Ready to train</div>
+        </div>
+
+        <div class="results-section">
+            <h2>3. Training Results</h2>
+            <div id="status" class="status info">Waiting for data...</div>
+            
+            <h3>Training vs Validation Loss</h3>
+            <div class="chart-container">
+                <canvas id="lossChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="data-loader.js"></script>
+    <script src="lstm.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
