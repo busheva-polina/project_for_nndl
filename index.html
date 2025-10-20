@@ -307,7 +307,7 @@
     <div class="app-container">
         <div class="header">
             <h1>WTI Crude Oil Price Prediction</h1>
-            <p>Advanced LSTM Neural Network for Multivariate Time Series Forecasting</p>
+            <p>Improved LSTM Model with 20 Epochs & Better Regularization</p>
         </div>
         
         <div class="main-content">
@@ -344,19 +344,19 @@
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polygon points="5 3 19 12 5 21 5 3"></polygon>
                         </svg>
-                        Train Model
+                        Train Model (20 Epochs)
                     </button>
                     
                     <div class="progress-container">
                         <div class="progress-info">
                             <span>Training Progress</span>
-                            <span id="progressText">0/100 epochs</span>
+                            <span id="progressText">0/20 epochs</span>
                         </div>
                         <div class="progress-bar">
                             <div class="progress-fill" id="trainingProgressFill" style="width: 0%"></div>
                         </div>
                         <div id="trainingStatus" class="status info">
-                            Ready to train model
+                            Ready to train model with improved architecture
                         </div>
                     </div>
                     
@@ -429,13 +429,4 @@
             // File input change handler
             fileInput.addEventListener('change', function() {
                 if (this.files.length > 0) {
-                    const fileName = this.files[0].name;
-                    fileStatus.textContent = `Selected file: ${fileName}`;
-                    fileStatus.className = 'status success';
-                    fileStatus.style.display = 'block';
-                }
-            });
-        });
-    </script>
-</body>
-</html>
+                    const fileName =
