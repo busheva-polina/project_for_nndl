@@ -1,4 +1,4 @@
-\class DataLoader {
+class DataLoader {
     constructor() {
         this.data = null;
         this.featureColumns = [];
