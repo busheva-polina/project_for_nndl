@@ -1,10 +1,8 @@
 class DataLoader {
     constructor() {
         this.data = null;
-        this.features = null;
-        this.target = null;
         this.trainSize = 0.8;
-        this.sequenceLength = 30;
+        this.sequenceLength = 20;
         this.scalers = {};
     }
 
@@ -41,7 +39,8 @@ class DataLoader {
             
             const row = {};
             headers.forEach((header, index) => {
-                row[header] = parseFloat(values[index]) || 0;
+                const value = parseFloat(values[index]);
+                row[header] = isNaN(value) ? 0 : value;
             });
             data.push(row);
         }
@@ -54,22 +53,19 @@ class DataLoader {
             throw new Error('No data loaded');
         }
 
-        // Select features - using most significant variables for WTI prediction
-        const featureColumns = ['WTI', 'Gold Futures', 'US Dollar Index Futures', 
-                               'US 10 Year Bond Yield', 'S&P 500', 'Dow Jones Utility Average'];
+        const featureColumns = [
+            'WTI', 'Gold Futures', 'US Dollar Index Futures', 
+            'US 10 Year Bond Yield', 'S&P 500', 'Dow Jones Utility Average'
+        ];
         
-        // Extract features and target (WTI is our main prediction target)
         const features = this.data.map(row => featureColumns.map(col => row[col]));
         const target = this.data.map(row => row['WTI']);
 
-        // Scale features
         const scaledFeatures = this.scaleFeatures(features, featureColumns);
         const scaledTarget = this.scaleValues(target, 'WTI');
 
-        // Create sequences
         const { X, y } = this.createSequences(scaledFeatures, scaledTarget);
         
-        // Split into train/test
         const splitIndex = Math.floor(X.shape[0] * this.trainSize);
         
         const X_train = X.slice(0, splitIndex);
@@ -95,14 +91,13 @@ class DataLoader {
             scaled.push(scaledColumn);
         }
 
-        // Transpose back to original shape
         return scaled[0].map((_, i) => scaled.map(col => col[i]));
     }
 
     createScaler(values) {
         const min = Math.min(...values);
         const max = Math.max(...values);
-        return { min, max, range: max - min };
+        return { min, max, range: max - min || 1 };
     }
 
     scaleValues(values, columnName) {
@@ -137,7 +132,7 @@ class DataLoader {
     }
 
     dispose() {
-        if (this.features) this.features.dispose();
-        if (this.target) this.target.dispose();
+        this.data = null;
+        this.scalers = {};
     }
 }
