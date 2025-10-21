@@ -1,101 +1,101 @@
-class GRUModel {
-    constructor() {
+import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm';
+
+export class GRUModel {
+    constructor(sequenceLength, numFeatures) {
+        this.sequenceLength = sequenceLength;
+        this.numFeatures = numFeatures;
         this.model = null;
-        this.isTraining = false;
-        this.trainingStopRequested = false;
-        this.history = {
-            loss: [],
-            val_loss: [],
-            epochs: []
-        };
+        this.trainingHistory = null;
     }
 
-    buildModel(sequenceLength, numFeatures, numOutputs, learningRate = 0.001) {
+    buildModel() {
         this.model = tf.sequential({
             layers: [
                 tf.layers.gru({
                     units: 64,
                     returnSequences: true,
-                    inputShape: [sequenceLength, numFeatures],
-                    kernelRegularizer: tf.regularizers.l2({l2: 0.01})
+                    inputShape: [this.sequenceLength, this.numFeatures]
                 }),
-                tf.layers.batchNormalization(),
-                tf.layers.dropout({ rate: 0.3 }),
-                
+                tf.layers.dropout({ rate: 0.2 }),
                 tf.layers.gru({
                     units: 32,
-                    returnSequences: false,
-                    kernelRegularizer: tf.regularizers.l2({l2: 0.01})
+                    returnSequences: false
                 }),
-                tf.layers.batchNormalization(),
-                tf.layers.dropout({ rate: 0.3 }),
-                
-                tf.layers.dense({ 
-                    units: 16, 
-                    activation: 'relu',
-                    kernelRegularizer: tf.regularizers.l2({l2: 0.01})
-                }),
-                tf.layers.batchNormalization(),
-                
-                tf.layers.dense({ 
-                    units: numOutputs, 
-                    activation: 'sigmoid'
-                })
+                tf.layers.dropout({ rate: 0.2 }),
+                tf.layers.dense({ units: 16, activation: 'relu' }),
+                tf.layers.dense({ units: 1 })
             ]
         });
 
-        const optimizer = tf.train.adam(learningRate);
-        
         this.model.compile({
-            optimizer: optimizer,
-            loss: 'binaryCrossentropy',
-            metrics: ['accuracy', 'mse']
+            optimizer: tf.train.adam(0.001),
+            loss: 'meanSquaredError',
+            metrics: ['mae']
         });
 
-        console.log('Multi-output GRU model built successfully');
         return this.model;
     }
 
-    async trainModel(X_train, y_train, X_test, y_test, epochs, batchSize, callbacks = {}) {
+    async train(X_train, y_train, X_test, y_test, epochs = 100, callbacks = {}) {
         if (!this.model) {
-            throw new Error('Model not built. Call buildModel() first.');
+            throw new Error('Model not built. Call buildModel first.');
         }
 
-        this.isTraining = true;
-        this.trainingStopRequested = false;
-        this.history = { loss: [], val_loss: [], epochs: [] };
+        const onEpochEnd = callbacks.onEpochEnd || (() => {});
+        const onTrainEnd = callbacks.onTrainEnd || (() => {});
+
+        this.trainingHistory = await this.model.fit(X_train, y_train, {
+            epochs: epochs,
+            batchSize: 32,
+            validationData: [X_test, y_test],
+            callbacks: {
+                onEpochEnd: async (epoch, logs) => {
+                    onEpochEnd(epoch, logs);
+                    await tf.nextFrame(); // Prevent UI blocking
+                },
+                onTrainEnd: onTrainEnd
+            }
+        });
+
+        return this.trainingHistory;
+    }
+
+    async predict(X) {
+        if (!this.model) {
+            throw new Error('Model not built. Call buildModel first.');
+        }
+        return this.model.predict(X);
+    }
+
+    async saveModel(name = 'gru-model') {
+        if (!this.model) {
+            throw new Error('No model to save');
+        }
         
+        const saveResult = await this.model.save(`indexeddb://${name}`);
+        return saveResult;
+    }
+
+    async loadModel(name = 'gru-model') {
         try {
-            await this.model.fit(X_train, y_train, {
-                epochs: epochs,
-                batchSize: batchSize,
-                validationData: [X_test, y_test],
-                callbacks: {
-                    onEpochBegin: async (epoch) => {
-                        if (this.trainingStopRequested) {
-                            this.model.stopTraining = true;
-                            this.isTraining = false;
-                            return;
-                        }
-                    },
-                    onEpochEnd: async (epoch, logs) => {
-                        if (this.trainingStopRequested) {
-                            this.model.stopTraining = true;
-                            this.isTraining = false;
-                            return;
-                        }
+            this.model = await tf.loadLayersModel(`indexeddb://${name}`);
+            // Update model configuration
+            this.sequenceLength = this.model.inputs[0].shape[1];
+            this.numFeatures = this.model.inputs[0].shape[2];
+            return true;
+        } catch (error) {
+            console.warn('Failed to load model:', error);
+            return false;
+        }
+    }
 
-                        this.history.loss.push(logs.loss);
-                        this.history.val_loss.push(logs.val_loss);
-                        this.history.epochs.push(epoch + 1);
+    dispose() {
+        if (this.model) {
+            this.model.dispose();
+        }
+    }
 
-                        if (callbacks.onEpochEnd) {
-                            callbacks.onEpochEnd(epoch, logs, this.history);
-                        }
-
-                        if (epoch % 3 === 0) {
-                            await tf.nextFrame();
-                        }
-                    },
-                    onBatchEnd: async (batch, logs) => {
-                        if (callbacks.onBatchEnd
+    getTrainingHistory() {
+        return this.trainingHistory;
+    }
+}
