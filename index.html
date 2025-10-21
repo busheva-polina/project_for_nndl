@@ -98,6 +98,7 @@
             font-weight: 600;
             transition: all 0.3s ease;
             margin: 10px;
+            min-width: 120px;
         }
         
         .button:hover:not(:disabled) {
@@ -109,6 +110,7 @@
             background: #7f8fa6;
             cursor: not-allowed;
             transform: none;
+            opacity: 0.6;
         }
         
         .status {
@@ -215,7 +217,7 @@
             <div class="upload-section">
                 <input type="file" id="csvFile" accept=".csv" class="file-input" />
                 <br>
-                <button id="trainBtn" class="button" disabled>Train Model</button>
+                <button id="trainBtn" class="button">Train Model</button>
             </div>
             
             <div id="status" class="status info">Please upload your COMBINED.csv file to begin</div>
