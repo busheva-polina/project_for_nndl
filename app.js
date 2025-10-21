@@ -1,464 +1,196 @@
 class StockPredictionApp {
     constructor() {
         this.dataLoader = new DataLoader();
-        this.model = null;
-        this.trainingData = null;
+        this.predictor = new LSTMStockPredictor();
         this.isTraining = false;
-        this.currentEpoch = 0;
-        this.totalEpochs = 20;
+        this.trainingLogs = [];
         
         this.initializeUI();
     }
 
     initializeUI() {
         // File input handler
-        document.getElementById('csvFile').addEventListener('change', (e) => {
-            this.handleFileUpload(e.target.files[0]);
+        const fileInput = document.getElementById('csvFile');
+        const trainBtn = document.getElementById('trainBtn');
+        const statusDiv = document.getElementById('status');
+        const progressDiv = document.getElementById('progress');
+
+        fileInput.addEventListener('change', (e) => {
+            this.handleFileSelect(e);
         });
 
-        // Train button handler
-        document.getElementById('trainBtn').addEventListener('click', () => {
+        trainBtn.addEventListener('click', () => {
             this.startTraining();
         });
-
-        // Initialize charts
-        this.initializeCharts();
     }
 
-    initializeCharts() {
-        const lossCtx = document.getElementById('lossChart').getContext('2d');
-        this.lossChart = new Chart(lossCtx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [
-                    {
-                        label: 'Training Loss',
-                        borderColor: 'rgb(59, 130, 246)',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        borderWidth: 3,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                        pointBackgroundColor: 'rgb(59, 130, 246)',
-                        pointBorderColor: 'rgb(59, 130, 246)',
-                        pointHoverBackgroundColor: 'rgb(59, 130, 246)',
-                        pointHoverBorderColor: 'white',
-                        pointHoverBorderWidth: 2,
-                        fill: true,
-                        tension: 0.4,
-                        data: []
-                    },
-                    {
-                        label: 'Validation Loss',
-                        borderColor: 'rgb(239, 68, 68)',
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                        borderWidth: 3,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                        pointBackgroundColor: 'rgb(239, 68, 68)',
-                        pointBorderColor: 'rgb(239, 68, 68)',
-                        pointHoverBackgroundColor: 'rgb(239, 68, 68)',
-                        pointHoverBorderColor: 'white',
-                        pointHoverBorderWidth: 2,
-                        fill: true,
-                        tension: 0.4,
-                        data: []
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 300,
-                    easing: 'easeInOutCubic'
-                },
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Training Progress - Loss Curves',
-                        font: {
-                            size: 16,
-                            weight: 'bold'
-                        },
-                        color: '#1f2937',
-                        padding: 20
-                    },
-                    legend: {
-                        display: true,
-                        position: 'top',
-                        labels: {
-                            usePointStyle: true,
-                            padding: 20,
-                            font: {
-                                size: 12,
-                                weight: '500'
-                            }
-                        }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleFont: {
-                            size: 12
-                        },
-                        bodyFont: {
-                            size: 12
-                        },
-                        padding: 12,
-                        cornerRadius: 8
-                    }
-                },
-                scales: {
-                    x: {
-                        display: true,
-                        title: {
-                            display: true,
-                            text: 'Epoch',
-                            font: {
-                                size: 12,
-                                weight: 'bold'
-                            },
-                            color: '#6b7280'
-                        },
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)',
-                            drawBorder: false
-                        },
-                        ticks: {
-                            color: '#6b7280',
-                            font: {
-                                size: 11
-                            }
-                        }
-                    },
-                    y: {
-                        display: true,
-                        type: 'logarithmic',
-                        title: {
-                            display: true,
-                            text: 'Mean Squared Error (Log Scale)',
-                            font: {
-                                size: 12,
-                                weight: 'bold'
-                            },
-                            color: '#6b7280'
-                        },
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)',
-                            drawBorder: false
-                        },
-                        ticks: {
-                            color: '#6b7280',
-                            font: {
-                                size: 11
-                            },
-                            callback: function(value) {
-                                return value.toExponential(2);
-                            }
-                        }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                },
-                elements: {
-                    line: {
-                        tension: 0.4
-                    }
-                }
-            }
-        });
+    async handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
 
-        // Initialize prediction chart
-        const predictionCtx = document.getElementById('predictionChart').getContext('2d');
-        this.predictionChart = new Chart(predictionCtx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [
-                    {
-                        label: 'Actual WTI Price',
-                        borderColor: 'rgb(16, 185, 129)',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: true,
-                        data: []
-                    },
-                    {
-                        label: 'Predicted WTI Price',
-                        borderColor: 'rgb(139, 92, 246)',
-                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                        borderWidth: 2,
-                        borderDash: [5, 5],
-                        pointRadius: 0,
-                        fill: true,
-                        data: []
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'WTI Price Prediction vs Actual',
-                        font: {
-                            size: 16,
-                            weight: 'bold'
-                        },
-                        color: '#1f2937',
-                        padding: 20
-                    },
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    }
-                },
-                scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Time'
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Normalized Price'
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    async handleFileUpload(file) {
         try {
-            this.updateStatus('Loading CSV file...', 'info');
-            this.showLoadingSpinner(true);
+            this.updateStatus('Loading CSV data...');
             await this.dataLoader.loadCSV(file);
-            this.updateStatus('CSV loaded successfully. Click "Train Model" to start training.', 'success');
-            document.getElementById('trainBtn').disabled = false;
+            this.updateStatus('Data loaded successfully. Ready to train.');
         } catch (error) {
             this.updateStatus(`Error loading file: ${error.message}`, 'error');
-        } finally {
-            this.showLoadingSpinner(false);
-        }
-    }
-
-    showLoadingSpinner(show) {
-        const spinner = document.getElementById('loadingSpinner');
-        if (spinner) {
-            spinner.style.display = show ? 'block' : 'none';
         }
     }
 
     async startTraining() {
         if (this.isTraining) return;
-
+        
         try {
             this.isTraining = true;
-            this.currentEpoch = 0;
-            document.getElementById('trainBtn').disabled = true;
-            this.updateStatus('Preprocessing data...', 'info');
+            this.trainingLogs = [];
+            this.updateStatus('Preparing data...');
             
-            // Reset charts
-            this.lossChart.data.labels = [];
-            this.lossChart.data.datasets[0].data = [];
-            this.lossChart.data.datasets[1].data = [];
-            this.lossChart.update();
-
-            // Preprocess data
-            this.trainingData = this.dataLoader.preprocessData();
+            // Prepare data
+            const { X_train, y_train, X_test, y_test, featureNames } = this.dataLoader.prepareData();
+            
+            this.updateStatus(`Data prepared. Training samples: ${X_train.shape[0]}, Test samples: ${X_test.shape[0]}`);
             
             // Build model
-            const inputShape = [this.dataLoader.sequenceLength, this.trainingData.featureNames.length];
-            this.model = new LSTMModel(inputShape);
-            this.model.buildModel();
+            this.updateStatus('Building LSTM model...');
+            this.predictor.buildModel([X_train.shape[1], X_train.shape[2]]);
             
             // Set up training callbacks
-            this.model.onEpochEnd = (epoch, logs) => {
-                this.currentEpoch = epoch;
-                this.updateTrainingProgress(epoch, logs);
+            this.predictor.onEpochEnd = (epoch, logs) => {
+                this.trainingLogs.push({
+                    epoch: epoch + 1,
+                    loss: logs.loss,
+                    val_loss: logs.val_loss
+                });
+                
+                this.updateProgress(epoch + 1, 40, logs);
+                this.plotTrainingHistory();
             };
-
-            this.updateStatus('Starting model training with improved architecture...', 'info');
             
-            // Train model with only 20 epochs
-            await this.model.train(
-                this.trainingData.X_train,
-                this.trainingData.y_train,
-                this.trainingData.X_test,
-                this.trainingData.y_test,
-                this.totalEpochs,
-                32
-            );
-
-            this.updateStatus('Training completed! Making predictions...', 'success');
+            // Train model
+            this.updateStatus('Starting training...');
+            await this.predictor.trainModel(X_train, y_train, X_test, y_test, 40);
             
             // Make predictions
-            await this.makePredictions();
+            this.updateStatus('Making predictions...');
+            const predictions = await this.predictor.predict(X_test);
+            
+            // Visualize results
+            this.plotPredictions(y_test, predictions, this.dataLoader.scalers.WTI);
+            
+            this.updateStatus('Training completed successfully!');
+            
+            // Clean up tensors
+            X_train.dispose();
+            y_train.dispose();
+            X_test.dispose();
+            y_test.dispose();
+            predictions.dispose();
             
         } catch (error) {
             this.updateStatus(`Training error: ${error.message}`, 'error');
+            console.error(error);
         } finally {
             this.isTraining = false;
-            document.getElementById('trainBtn').disabled = false;
         }
-    }
-
-    updateTrainingProgress(epoch, logs) {
-        const progressFill = document.getElementById('trainingProgressFill');
-        const status = document.getElementById('trainingStatus');
-        const progressText = document.getElementById('progressText');
-        
-        if (progressFill && status) {
-            const percent = ((epoch + 1) / this.totalEpochs) * 100;
-            progressFill.style.width = `${percent}%`;
-            
-            const improvement = epoch > 0 ? 
-                `Val loss change: ${(this.model.history.val_loss[epoch-1] - logs.val_loss).toFixed(6)}` : 
-                'Training started';
-                
-            status.textContent = `Epoch ${epoch + 1}/${this.totalEpochs} - Loss: ${logs.loss.toFixed(6)}, Val Loss: ${logs.val_loss.toFixed(6)} | ${improvement}`;
-        }
-
-        if (progressText) {
-            progressText.textContent = `${epoch + 1}/${this.totalEpochs} epochs`;
-        }
-
-        // Update loss chart with smooth animation
-        this.updateLossChart(epoch, logs);
-    }
-
-    updateLossChart(epoch, logs) {
-        if (!this.model) return;
-
-        // Add new data point
-        this.lossChart.data.labels.push(epoch + 1);
-        this.lossChart.data.datasets[0].data.push(logs.loss);
-        this.lossChart.data.datasets[1].data.push(logs.val_loss);
-        
-        this.lossChart.update('active');
-    }
-
-    async makePredictions() {
-        try {
-            if (!this.model || !this.trainingData) return;
-
-            this.updateStatus('Making predictions and generating charts...', 'info');
-            
-            const predictions = this.model.predict(this.trainingData.X_test);
-            const actual = this.trainingData.y_test;
-            
-            // Get data for charts
-            const predData = await predictions.data();
-            const actualData = await actual.data();
-            
-            // Update prediction chart
-            this.updatePredictionChart(actualData, predData);
-            
-            // Calculate accuracy metrics
-            const mse = this.calculateMSE(predData, actualData);
-            const rmse = Math.sqrt(mse);
-            
-            const finalValLoss = this.model.history.val_loss[this.model.history.val_loss.length - 1];
-            const improvement = this.model.history.val_loss.length > 1 ? 
-                (this.model.history.val_loss[0] - finalValLoss).toFixed(6) : '0';
-            
-            this.updateStatus(`Training completed! Final RMSE: ${rmse.toFixed(6)}, Validation loss improved by: ${improvement}`, 'success');
-            
-            // Show metrics
-            this.showMetrics(mse, rmse, finalValLoss, improvement);
-            
-        } catch (error) {
-            console.error('Prediction error:', error);
-            this.updateStatus('Error generating predictions', 'error');
-        }
-    }
-
-    updatePredictionChart(actualData, predData) {
-        // Create time labels for x-axis
-        const timeLabels = Array.from({length: Math.min(actualData.length, 100)}, (_, i) => `T+${i + 1}`);
-        
-        // Limit data points for better visualization
-        const displayActual = actualData.slice(0, 100);
-        const displayPred = predData.slice(0, 100);
-        
-        this.predictionChart.data.labels = timeLabels;
-        this.predictionChart.data.datasets[0].data = displayActual;
-        this.predictionChart.data.datasets[1].data = displayPred;
-        this.predictionChart.update();
-    }
-
-    showMetrics(mse, rmse, finalValLoss, improvement) {
-        const metricsDiv = document.getElementById('metrics');
-        if (metricsDiv) {
-            metricsDiv.innerHTML = `
-                <div class="metrics-grid">
-                    <div class="metric-card">
-                        <div class="metric-value">${mse.toExponential(4)}</div>
-                        <div class="metric-label">Mean Squared Error</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value">${rmse.toFixed(6)}</div>
-                        <div class="metric-label">Root Mean Squared Error</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value">${finalValLoss.toFixed(6)}</div>
-                        <div class="metric-label">Final Validation Loss</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value" style="color: ${improvement > 0 ? '#10b981' : '#ef4444'}">
-                            ${improvement > 0 ? '+' : ''}${improvement}
-                        </div>
-                        <div class="metric-label">Validation Improvement</div>
-                    </div>
-                </div>
-            `;
-        }
-    }
-
-    calculateMSE(predictions, actual) {
-        let sum = 0;
-        for (let i = 0; i < predictions.length; i++) {
-            sum += Math.pow(predictions[i] - actual[i], 2);
-        }
-        return sum / predictions.length;
     }
 
     updateStatus(message, type = 'info') {
-        const statusElement = document.getElementById('status');
-        if (statusElement) {
-            statusElement.textContent = message;
-            statusElement.className = `status ${type}`;
-        }
-        console.log(`Status: ${message}`);
+        const statusDiv = document.getElementById('status');
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${type}`;
+    }
+
+    updateProgress(epoch, totalEpochs, logs) {
+        const progressDiv = document.getElementById('progress');
+        const percent = (epoch / totalEpochs) * 100;
+        progressDiv.innerHTML = `
+            <div>Epoch ${epoch}/${totalEpochs}</div>
+            <div>Loss: ${logs.loss.toFixed(4)}</div>
+            <div>Val Loss: ${logs.val_loss.toFixed(4)}</div>
+            <progress value="${percent}" max="100"></progress>
+        `;
+    }
+
+    plotTrainingHistory() {
+        if (this.trainingLogs.length === 0) return;
+
+        const losses = this.trainingLogs.map(log => log.loss);
+        const valLosses = this.trainingLogs.map(log => log.val_loss);
+        const epochs = this.trainingLogs.map(log => log.epoch);
+
+        const trace1 = {
+            x: epochs,
+            y: losses,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Training Loss',
+            line: { color: 'blue' }
+        };
+
+        const trace2 = {
+            x: epochs,
+            y: valLosses,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Validation Loss',
+            line: { color: 'red' }
+        };
+
+        const layout = {
+            title: 'Training and Validation Loss',
+            xaxis: { title: 'Epoch' },
+            yaxis: { title: 'Mean Squared Error' }
+        };
+
+        Plotly.newPlot('lossChart', [trace1, trace2], layout);
+    }
+
+    plotPredictions(actual, predicted, scaler) {
+        // Convert tensors to arrays
+        const actualData = actual.dataSync();
+        const predictedData = predicted.dataSync();
+        
+        // Unscale values
+        const actualUnscaled = this.dataLoader.unscaleValues(Array.from(actualData), 'WTI');
+        const predictedUnscaled = this.dataLoader.unscaleValues(Array.from(predictedData), 'WTI');
+        
+        const indices = Array.from({length: actualUnscaled.length}, (_, i) => i);
+
+        const trace1 = {
+            x: indices,
+            y: actualUnscaled,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Actual WTI',
+            line: { color: 'blue' }
+        };
+
+        const trace2 = {
+            x: indices,
+            y: predictedUnscaled,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Predicted WTI',
+            line: { color: 'red' }
+        };
+
+        const layout = {
+            title: 'WTI Crude Oil Price Prediction',
+            xaxis: { title: 'Time Steps' },
+            yaxis: { title: 'Price' }
+        };
+
+        Plotly.newPlot('predictionChart', [trace1, trace2], layout);
     }
 
     dispose() {
-        if (this.dataLoader) {
-            this.dataLoader.dispose();
-        }
-        if (this.model) {
-            this.model.dispose();
-        }
-        if (this.trainingData) {
-            this.trainingData.X_train.dispose();
-            this.trainingData.y_train.dispose();
-            this.trainingData.X_test.dispose();
-            this.trainingData.y_test.dispose();
-        }
+        this.dataLoader.dispose();
+        this.predictor.dispose();
     }
 }
 
-// Initialize app when DOM is loaded
+// Initialize app when page loads
+let app;
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new StockPredictionApp();
+    app = new StockPredictionApp();
 });
