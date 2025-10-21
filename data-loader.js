@@ -1,132 +1,127 @@
-class DataLoader {
+import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm';
+
+export class DataLoader {
     constructor() {
         this.data = null;
-        this.features = ['WTI', 'Gold Futures', 'US Dollar Index Futures'];
         this.sequenceLength = 30;
+        this.featureColumns = ['WTI', 'US Dollar Index Futures', 'Gold Futures'];
+        this.targetColumn = 'WTI';
         this.trainTestSplit = 0.8;
     }
 
     async loadCSV(file) {
         return new Promise((resolve, reject) => {
-            Papa.parse(file, {
-                header: true,
-                dynamicTyping: true,
-                skipEmptyLines: true,
-                complete: (results) => {
-                    if (results.errors.length > 0) {
-                        reject(new Error(`CSV parsing errors: ${results.errors.map(e => e.message).join(', ')}`));
-                        return;
-                    }
-                    
-                    if (results.data.length === 0) {
-                        reject(new Error('CSV file is empty or could not be parsed'));
-                        return;
-                    }
+            if (!file) {
+                reject(new Error('No file provided'));
+                return;
+            }
 
-                    console.log('CSV headers:', Object.keys(results.data[0]));
-                    console.log('First few rows:', results.data.slice(0, 3));
-                    
-                    this.data = this.preprocessData(results.data);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const csvText = e.target.result;
+                    this.parseCSV(csvText);
                     resolve(this.data);
-                },
-                error: (error) => {
-                    reject(new Error(`Failed to parse CSV: ${error.message}`));
+                } catch (error) {
+                    reject(error);
                 }
-            });
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsText(file);
         });
     }
 
-    preprocessData(rawData) {
-        const cleanData = rawData.filter(row => {
-            return this.features.every(feature => {
-                const value = row[feature];
-                return value !== null && 
-                       value !== undefined && 
-                       !isNaN(value) &&
-                       typeof value === 'number';
-            });
-        });
-
-        if (cleanData.length === 0) {
-            throw new Error('No valid data remaining after cleaning. Check CSV headers match: WTI, Gold Futures, US Dollar Index Futures');
+    parseCSV(csvText) {
+        const lines = csvText.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        
+        // Validate required columns
+        const requiredColumns = [...this.featureColumns, this.targetColumn];
+        const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+        if (missingColumns.length > 0) {
+            throw new Error(`Missing required columns: ${missingColumns.join(', ')}`);
         }
 
-        console.log(`Original data: ${rawData.length} rows, Clean data: ${cleanData.length} rows`);
-        console.log('Sample cleaned data:', cleanData.slice(0, 3));
-        return cleanData;
+        const parsedData = [];
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',').map(v => parseFloat(v.trim()));
+            if (values.some(isNaN)) continue; // Skip invalid rows
+            
+            const row = {};
+            headers.forEach((header, index) => {
+                row[header] = values[index];
+            });
+            parsedData.push(row);
+        }
+
+        if (parsedData.length < this.sequenceLength + 1) {
+            throw new Error('Insufficient data for sequence length');
+        }
+
+        this.data = parsedData;
     }
 
-    prepareData(sequenceLength = 30) {
-        if (!this.data || this.data.length === 0) {
-            throw new Error('No data available. Please load CSV file first.');
-        }
-
-        if (sequenceLength >= this.data.length) {
-            throw new Error('Sequence length is too large for the available data');
+    prepareSequences() {
+        if (!this.data) {
+            throw new Error('No data loaded. Call loadCSV first.');
         }
 
         const sequences = [];
         const targets = [];
 
-        for (let i = sequenceLength; i < this.data.length - 1; i++) {
+        // Extract feature values
+        const featureValues = this.featureColumns.map(col => 
+            this.data.map(row => row[col])
+        );
+
+        // Extract target values
+        const targetValues = this.data.map(row => row[this.targetColumn]);
+
+        // Create sequences and targets
+        for (let i = 0; i < this.data.length - this.sequenceLength; i++) {
             const sequence = [];
-            for (let j = i - sequenceLength; j < i; j++) {
-                const featureVector = this.features.map(feature => {
-                    const value = this.data[j][feature];
-                    if (value === null || value === undefined || isNaN(value)) {
-                        throw new Error(`Invalid data at row ${j}, feature ${feature}`);
-                    }
-                    return value;
-                });
-                sequence.push(featureVector);
+            for (let j = 0; j < this.sequenceLength; j++) {
+                const features = this.featureColumns.map(col => 
+                    this.data[i + j][col]
+                );
+                sequence.push(features);
             }
-            
             sequences.push(sequence);
-            
-            const nextDayPrices = this.features.map(feature => this.data[i + 1][feature]);
-            const currentPrices = this.features.map(feature => this.data[i][feature]);
-            const returns = nextDayPrices.map((price, idx) => (price - currentPrices[idx]) / currentPrices[idx]);
-            const binaryLabels = returns.map(ret => ret > 0 ? 1 : 0);
-            
-            targets.push(binaryLabels);
+            targets.push(targetValues[i + this.sequenceLength]);
         }
 
-        if (sequences.length === 0) {
-            throw new Error('No sequences created. Check data length and sequence length.');
-        }
+        // Convert to tensors
+        const sequencesTensor = tf.tensor3d(sequences);
+        const targetsTensor = tf.tensor1d(targets);
 
+        // Split into train/test
         const splitIndex = Math.floor(sequences.length * this.trainTestSplit);
         
-        const X_train = sequences.slice(0, splitIndex);
-        const y_train = targets.slice(0, splitIndex);
-        const X_test = sequences.slice(splitIndex);
-        const y_test = targets.slice(splitIndex);
+        const X_train = sequencesTensor.slice([0, 0, 0], [splitIndex, -1, -1]);
+        const X_test = sequencesTensor.slice([splitIndex, 0, 0], [-1, -1, -1]);
+        const y_train = targetsTensor.slice([0], [splitIndex]);
+        const y_test = targetsTensor.slice([splitIndex], [-1]);
 
-        console.log(`Creating tensors: ${X_train.length} training, ${X_test.length} test samples`);
-        
-        const X_train_tensor = tf.tensor3d(X_train, [X_train.length, sequenceLength, this.features.length]);
-        const y_train_tensor = tf.tensor2d(y_train, [y_train.length, this.features.length]);
-        const X_test_tensor = tf.tensor3d(X_test, [X_test.length, sequenceLength, this.features.length]);
-        const y_test_tensor = tf.tensor2d(y_test, [y_test.length, this.features.length]);
-
-        console.log(`Data prepared: ${X_train.length} training samples, ${X_test.length} test samples`);
-        console.log(`X_train shape: ${X_train_tensor.shape}, y_train shape: ${y_train_tensor.shape}`);
+        // Clean up intermediate tensors
+        sequencesTensor.dispose();
+        targetsTensor.dispose();
 
         return {
-            X_train: X_train_tensor,
-            y_train: y_train_tensor,
-            X_test: X_test_tensor,
-            y_test: y_test_tensor,
-            featureNames: this.features,
-            stockSymbols: this.features
+            X_train,
+            y_train,
+            X_test,
+            y_test,
+            trainSize: splitIndex,
+            testSize: sequences.length - splitIndex
         };
     }
 
     dispose() {
-        if (this.data) {
-            this.data = null;
+        // Cleanup method for tensor disposal
+        if (this.dataTensors) {
+            Object.values(this.dataTensors).forEach(tensor => {
+                if (tensor && tensor.dispose) tensor.dispose();
+            });
         }
     }
 }
-
-export default DataLoader;
