@@ -1,41 +1,147 @@
 class StockPredictionApp {
     constructor() {
         this.dataLoader = new DataLoader();
-        this.predictor = new LSTMStockPredictor();
+        this.model = new GRUModel();
         this.isTraining = false;
-        this.trainingLogs = [];
+        this.normalization = null;
+        this.chart = null;
+        this.lossChart = null;
         
         this.initializeUI();
     }
 
     initializeUI() {
-        const fileInput = document.getElementById('csvFile');
-        const trainBtn = document.getElementById('trainBtn');
-        const featuresList = document.getElementById('featuresList');
-
-        fileInput.addEventListener('change', (e) => {
+        // File input handler
+        document.getElementById('csvFile').addEventListener('change', (e) => {
             this.handleFileSelect(e);
         });
 
-        trainBtn.addEventListener('click', () => {
+        // Train button handler
+        document.getElementById('trainBtn').addEventListener('click', () => {
             this.startTraining();
         });
 
-        // Enable train button by default for testing
-        trainBtn.disabled = false;
+        // Initialize charts
+        this.initializeCharts();
+    }
 
-        const featureNames = [
-            'WTI (Target)',
-            'Gold Futures', 
-            'US Dollar Index Futures', 
-            'US 10 Year Bond Yield', 
-            'S&P 500', 
-            'Dow Jones Utility Average'
-        ];
-        
-        featuresList.innerHTML = featureNames.map(feature => 
-            `<div class="feature-item">${feature}</div>`
-        ).join('');
+    initializeCharts() {
+        // Prediction chart
+        const ctx = document.getElementById('predictionChart').getContext('2d');
+        this.chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'Actual WTI',
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Predicted WTI',
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Time Steps'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'WTI Price (Normalized)'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#ffffff'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Loss chart
+        const lossCtx = document.getElementById('lossChart').getContext('2d');
+        this.lossChart = new Chart(lossCtx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'Training Loss',
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 1
+                    },
+                    {
+                        label: 'Validation Loss',
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Epoch'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        type: 'logarithmic',
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Loss (MSE)'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#ffffff'
+                        }
+                    }
+                }
+            }
+        });
     }
 
     async handleFileSelect(event) {
@@ -45,201 +151,151 @@ class StockPredictionApp {
         try {
             this.updateStatus('Loading CSV data...', 'info');
             await this.dataLoader.loadCSV(file);
-            this.updateStatus('Data loaded successfully. Ready to train.', 'success');
+            this.updateStatus('CSV loaded successfully!', 'success');
             document.getElementById('trainBtn').disabled = false;
         } catch (error) {
-            this.updateStatus(`Error loading file: ${error.message}`, 'error');
-            document.getElementById('trainBtn').disabled = false;
+            this.updateStatus(`Error loading CSV: ${error.message}`, 'error');
+            console.error('File loading error:', error);
         }
     }
 
     async startTraining() {
-        if (this.isTraining) {
-            this.updateStatus('Training already in progress...', 'info');
-            return;
-        }
-        
+        if (this.isTraining) return;
+
         try {
             this.isTraining = true;
-            this.trainingLogs = [];
             this.updateStatus('Preparing data...', 'info');
+            document.getElementById('trainBtn').disabled = true;
+
+            // Prepare sequences
+            const { X_train, y_train, X_test, y_test, normalization, featureNames } = 
+                this.dataLoader.prepareSequences();
             
-            const trainBtn = document.getElementById('trainBtn');
-            trainBtn.disabled = true;
-            trainBtn.textContent = 'Training...';
+            this.normalization = normalization;
+
+            this.updateStatus('Building model...', 'info');
             
-            // Check if data is loaded
-            if (!this.dataLoader.data) {
-                throw new Error('Please upload a CSV file first');
-            }
+            // Build model
+            this.model.buildModel([X_train.shape[1], X_train.shape[2]], featureNames);
             
-            const { X_train, y_train, X_test, y_test, featureNames } = this.dataLoader.prepareData();
-            
-            this.updateStatus(`Data prepared. Training samples: ${X_train.shape[0]}, Test samples: ${X_test.shape[0]}`, 'info');
-            
-            this.updateStatus('Building LSTM model...', 'info');
-            this.predictor.buildModel([X_train.shape[1], X_train.shape[2]]);
-            
-            this.predictor.onEpochEnd = (epoch, logs) => {
-                this.trainingLogs.push({
-                    epoch: epoch + 1,
-                    loss: logs.loss,
-                    val_loss: logs.val_loss
-                });
-                
-                this.updateProgress(epoch + 1, 40, logs);
-                this.plotTrainingHistory();
+            // Display feature importance
+            this.displayFeatureImportance();
+
+            // Set up training callback
+            this.model.onEpochEnd = (epoch, logs) => {
+                this.updateTrainingProgress(epoch, logs);
             };
+
+            this.updateStatus('Training started...', 'info');
             
-            this.updateStatus('Starting training... This may take a few minutes.', 'info');
-            await this.predictor.trainModel(X_train, y_train, X_test, y_test, 40);
+            // Train model
+            await this.model.train(X_train, y_train, X_test, y_test, 40);
+
+            this.updateStatus('Training completed!', 'success');
             
-            this.updateStatus('Making predictions...', 'info');
-            const predictions = await this.predictor.predict(X_test);
-            
-            this.plotPredictions(y_test, predictions, this.dataLoader.scalers.WTI);
-            
-            this.updateStatus('Training completed successfully!', 'success');
-            
-            // Clean up tensors
-            X_train.dispose();
-            y_train.dispose();
-            X_test.dispose();
-            y_test.dispose();
-            predictions.dispose();
-            
+            // Make predictions
+            this.makePredictions(X_test, y_test);
+
+            // Cleanup tensors
+            tf.dispose([X_train, y_train, X_test, y_test]);
+
         } catch (error) {
             this.updateStatus(`Training error: ${error.message}`, 'error');
             console.error('Training error:', error);
         } finally {
             this.isTraining = false;
-            const trainBtn = document.getElementById('trainBtn');
-            trainBtn.disabled = false;
-            trainBtn.textContent = 'Train Model';
+            document.getElementById('trainBtn').disabled = false;
         }
     }
 
-    updateStatus(message, type = 'info') {
-        const statusDiv = document.getElementById('status');
-        statusDiv.textContent = message;
-        statusDiv.className = `status ${type}`;
-    }
-
-    updateProgress(epoch, totalEpochs, logs) {
-        const progressDiv = document.getElementById('progress');
-        const percent = (epoch / totalEpochs) * 100;
-        progressDiv.innerHTML = `
-            <div class="progress-info">
-                <span>Epoch ${epoch}/${totalEpochs}</span>
-                <span>Loss: ${logs.loss ? logs.loss.toFixed(4) : 'N/A'}</span>
-                <span>Val Loss: ${logs.val_loss ? logs.val_loss.toFixed(4) : 'N/A'}</span>
-            </div>
-            <progress value="${percent}" max="100"></progress>
-        `;
-    }
-
-    plotTrainingHistory() {
-        if (this.trainingLogs.length === 0) return;
-
-        const losses = this.trainingLogs.map(log => log.loss);
-        const valLosses = this.trainingLogs.map(log => log.val_loss);
-        const epochs = this.trainingLogs.map(log => log.epoch);
-
-        const trace1 = {
-            x: epochs,
-            y: losses,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Training Loss',
-            line: { color: '#00a8ff', width: 3 }
-        };
-
-        const trace2 = {
-            x: epochs,
-            y: valLosses,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Validation Loss',
-            line: { color: '#e84118', width: 3 }
-        };
-
-        const layout = {
-            title: 'Training and Validation Loss',
-            xaxis: { 
-                title: 'Epoch',
-                gridcolor: '#2f3640',
-                color: '#f5f6fa'
-            },
-            yaxis: { 
-                title: 'Mean Squared Error',
-                gridcolor: '#2f3640',
-                color: '#f5f6fa'
-            },
-            paper_bgcolor: '#1e272e',
-            plot_bgcolor: '#1e272e',
-            font: { color: '#f5f6fa' },
-            legend: { font: { color: '#f5f6fa' } }
-        };
-
-        Plotly.react('lossChart', [trace1, trace2], layout);
-    }
-
-    plotPredictions(actual, predicted, scaler) {
-        const actualData = actual.dataSync();
-        const predictedData = predicted.dataSync();
+    displayFeatureImportance() {
+        const importance = this.model.getFeatureImportance();
+        const featureList = document.getElementById('featureImportance');
         
-        const actualUnscaled = this.dataLoader.unscaleValues(Array.from(actualData), 'WTI');
-        const predictedUnscaled = this.dataLoader.unscaleValues(Array.from(predictedData), 'WTI');
+        featureList.innerHTML = importance.map(([feature, score]) => 
+            `<li>${feature}: ${score.toFixed(2)}</li>`
+        ).join('');
+    }
+
+    updateTrainingProgress(epoch, logs) {
+        const progress = ((epoch + 1) / 40) * 100;
+        document.getElementById('trainingProgress').style.width = `${progress}%`;
+        document.getElementById('trainingProgress').textContent = `${Math.round(progress)}%`;
         
-        const indices = Array.from({length: actualUnscaled.length}, (_, i) => i);
+        document.getElementById('currentEpoch').textContent = epoch + 1;
+        document.getElementById('currentLoss').textContent = logs.loss.toFixed(6);
+        document.getElementById('currentValLoss').textContent = logs.val_loss.toFixed(6);
 
-        const trace1 = {
-            x: indices,
-            y: actualUnscaled,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Actual WTI',
-            line: { color: '#00a8ff', width: 2 }
-        };
+        // Update loss chart
+        const history = this.model.getTrainingHistory();
+        this.updateLossChart(history);
+    }
 
-        const trace2 = {
-            x: indices,
-            y: predictedUnscaled,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Predicted WTI',
-            line: { color: '#fbc531', width: 2 }
-        };
+    updateLossChart(history) {
+        const epochs = history.loss.map((_, i) => i + 1);
+        
+        this.lossChart.data.labels = epochs;
+        this.lossChart.data.datasets[0].data = history.loss;
+        this.lossChart.data.datasets[1].data = history.val_loss;
+        this.lossChart.update();
+    }
 
-        const layout = {
-            title: 'WTI Crude Oil Price - Actual vs Predicted',
-            xaxis: { 
-                title: 'Time Steps',
-                gridcolor: '#2f3640',
-                color: '#f5f6fa'
-            },
-            yaxis: { 
-                title: 'Price (USD)',
-                gridcolor: '#2f3640',
-                color: '#f5f6fa'
-            },
-            paper_bgcolor: '#1e272e',
-            plot_bgcolor: '#1e272e',
-            font: { color: '#f5f6fa' },
-            legend: { font: { color: '#f5f6fa' } }
-        };
+    async makePredictions(X_test, y_test) {
+        try {
+            const predictions = this.model.predict(X_test);
+            const actualData = await y_test.data();
+            const predictedData = await predictions.data();
 
-        Plotly.react('predictionChart', [trace1, trace2], layout);
+            // Update prediction chart
+            const timeSteps = Array.from({ length: actualData.length }, (_, i) => i);
+            
+            this.chart.data.labels = timeSteps;
+            this.chart.data.datasets[0].data = actualData;
+            this.chart.data.datasets[1].data = Array.from(predictedData);
+            this.chart.update();
+
+            // Calculate and display accuracy metrics
+            this.displayAccuracyMetrics(actualData, Array.from(predictedData));
+
+            // Cleanup
+            predictions.dispose();
+        } catch (error) {
+            console.error('Prediction error:', error);
+        }
+    }
+
+    displayAccuracyMetrics(actual, predicted) {
+        const mse = tf.tidy(() => {
+            const actualTensor = tf.tensor1d(actual);
+            const predictedTensor = tf.tensor1d(predicted);
+            return tf.metrics.meanSquaredError(actualTensor, predictedTensor).dataSync()[0];
+        });
+
+        const rmse = Math.sqrt(mse);
+        
+        document.getElementById('finalMSE').textContent = mse.toFixed(6);
+        document.getElementById('finalRMSE').textContent = rmse.toFixed(6);
+    }
+
+    updateStatus(message, type) {
+        const statusElement = document.getElementById('status');
+        statusElement.textContent = message;
+        statusElement.className = `status ${type}`;
     }
 
     dispose() {
+        this.model.dispose();
         this.dataLoader.dispose();
-        this.predictor.dispose();
+        if (this.chart) {
+            this.chart.destroy();
+        }
+        if (this.lossChart) {
+            this.lossChart.destroy();
+        }
     }
 }
 
-// Initialize app when page loads
-let app;
+// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    app = new StockPredictionApp();
+    window.app = new StockPredictionApp();
 });
