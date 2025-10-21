@@ -102,6 +102,12 @@
             background-color: #222;
             color: #fff;
         }
+        .sample-data {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #002244;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
@@ -112,6 +118,13 @@
             <h2>1. Upload Data</h2>
             <input type="file" id="csvFile" accept=".csv">
             <button id="loadData">Load CSV Data</button>
+            <div class="sample-data">
+                <p><strong>Sample CSV Format:</strong></p>
+                <p>Date,WTI,Gold Futures,US Dollar Index Futures</p>
+                <p>2000-01-04,25.55,288.50,101.20</p>
+                <p>2000-01-05,25.60,289.10,101.15</p>
+                <p>... (ensure headers match exactly)</p>
+            </div>
             <div id="fileStatus" class="status"></div>
         </div>
 
@@ -138,7 +151,7 @@
             <button id="trainModel">Train Model</button>
             <button id="stopTraining" disabled>Stop Training</button>
             <button id="saveModel" disabled>Save Model</button>
-            <button id="loadModel" disabled>Load Model</button>
+            <button id="loadModel">Load Model</button>
             
             <div class="progress-bar">
                 <div class="progress-fill" id="trainingProgress"></div>
@@ -149,7 +162,7 @@
         <div class="results-section">
             <h2>3. Training Results</h2>
             <div class="chart-container">
-                <h3>Training vs Validation Loss (RMSE)</h3>
+                <h3>Training vs Validation Loss (Binary Crossentropy)</h3>
                 <canvas id="lossChart"></canvas>
             </div>
             <div id="resultsStatus" class="status"></div>
