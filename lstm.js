@@ -2,36 +2,38 @@ class LSTMStockPredictor {
     constructor() {
         this.model = null;
         this.history = null;
+        this.onEpochEnd = null;
     }
 
-    buildModel(inputShape, units = 64, layers = 5) {
+    buildModel(inputShape) {
         this.model = tf.sequential();
         
-        // First LSTM layer
         this.model.add(tf.layers.lstm({
-            units: units,
-            returnSequences: layers > 1,
+            units: 64,
+            returnSequences: true,
             inputShape: inputShape
         }));
         
-        // Additional LSTM layers
-        for (let i = 1; i < layers - 1; i++) {
-            this.model.add(tf.layers.lstm({
-                units: units,
-                returnSequences: i < layers - 2
-            }));
-        }
+        this.model.add(tf.layers.lstm({
+            units: 64,
+            returnSequences: true
+        }));
         
-        // Final Dense layer
+        this.model.add(tf.layers.lstm({
+            units: 64,
+            returnSequences: false
+        }));
+        
+        this.model.add(tf.layers.dense({ units: 32, activation: 'relu' }));
         this.model.add(tf.layers.dense({ units: 1 }));
         
-        // Compile model
         this.model.compile({
             optimizer: tf.train.adam(0.001),
             loss: 'meanSquaredError',
             metrics: ['mse']
         });
         
+        console.log('Model built successfully');
         return this.model;
     }
 
@@ -46,9 +48,6 @@ class LSTMStockPredictor {
             validationData: [X_test, y_test],
             callbacks: {
                 onEpochEnd: (epoch, logs) => {
-                    console.log(`Epoch ${epoch + 1}: loss = ${logs.loss.toFixed(4)}, val_loss = ${logs.val_loss.toFixed(4)}`);
-                    
-                    // Update UI if callback is provided
                     if (this.onEpochEnd) {
                         this.onEpochEnd(epoch, logs);
                     }
