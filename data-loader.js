@@ -1,155 +1,117 @@
 class DataLoader {
     constructor() {
         this.data = null;
-        this.features = null;
+        this.features = ['WTI', 'US Dollar Index Futures', 'Gold Futures'];
         this.target = 'WTI';
-        this.sequenceLength = 30;
         this.trainTestSplit = 0.8;
     }
 
     async loadCSV(file) {
         return new Promise((resolve, reject) => {
-            if (!file) {
-                reject(new Error('No file provided'));
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const csvData = e.target.result;
-                    this.parseCSV(csvData);
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.errors.length > 0) {
+                        reject(new Error(`CSV parsing errors: ${results.errors.map(e => e.message).join(', ')}`));
+                        return;
+                    }
+                    
+                    if (results.data.length === 0) {
+                        reject(new Error('CSV file is empty or could not be parsed'));
+                        return;
+                    }
+                    
+                    this.data = this.preprocessData(results.data);
                     resolve(this.data);
-                } catch (error) {
-                    reject(error);
+                },
+                error: (error) => {
+                    reject(new Error(`Failed to parse CSV: ${error.message}`));
                 }
-            };
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsText(file);
+            });
         });
     }
 
-    parseCSV(csvText) {
-        const lines = csvText.trim().split('\n');
-        const headers = lines[0].split(',').map(h => h.trim());
-        
-        // Validate required columns
-        if (!headers.includes('Date') || !headers.includes('WTI')) {
-            throw new Error('CSV must contain Date and WTI columns');
+    preprocessData(rawData) {
+        // Remove rows with missing values in our selected features
+        const cleanData = rawData.filter(row => {
+            return this.features.every(feature => 
+                row[feature] !== null && 
+                row[feature] !== undefined && 
+                !isNaN(row[feature])
+            );
+        });
+
+        if (cleanData.length === 0) {
+            throw new Error('No valid data remaining after cleaning');
         }
 
-        const parsedData = [];
-        for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',').map(v => v.trim());
-            if (values.length !== headers.length) continue;
-
-            const row = {};
-            headers.forEach((header, index) => {
-                const value = parseFloat(values[index]);
-                row[header] = isNaN(value) ? values[index] : value;
-            });
-            
-            // Only add rows with valid WTI data
-            if (row[this.target] !== undefined && !isNaN(row[this.target])) {
-                parsedData.push(row);
-            }
-        }
-
-        if (parsedData.length === 0) {
-            throw new Error('No valid data found in CSV');
-        }
-
-        this.data = parsedData;
-        this.features = headers.filter(h => h !== 'Date' && h !== this.target);
+        console.log(`Original data: ${rawData.length} rows, Clean data: ${cleanData.length} rows`);
+        return cleanData;
     }
 
-    prepareSequences() {
-        if (!this.data || this.data.length === 0) {
-            throw new Error('No data loaded');
-        }
-
-        const featureColumns = this.features;
-        const targetColumn = this.target;
-
-        // Extract values and handle missing data
-        const values = this.data.map(row => 
-            featureColumns.map(col => row[col] || 0)
-        );
-        const targets = this.data.map(row => row[targetColumn]);
-
-        // Normalize data
-        const { normalized: normalizedValues, min: valueMin, max: valueMax } = 
-            this.minMaxNormalize(values);
-        const { normalized: normalizedTargets, min: targetMin, max: targetMax } = 
-            this.minMaxNormalize(targets);
-
-        // Create sequences
+    createSequences(data, sequenceLength) {
         const sequences = [];
-        const labels = [];
+        const targets = [];
 
-        for (let i = this.sequenceLength; i < normalizedValues.length; i++) {
-            sequences.push(normalizedValues.slice(i - this.sequenceLength, i));
-            labels.push(normalizedTargets[i]);
+        for (let i = sequenceLength; i < data.length; i++) {
+            const sequence = [];
+            for (let j = i - sequenceLength; j < i; j++) {
+                const featureVector = this.features.map(feature => data[j][feature]);
+                sequence.push(featureVector);
+            }
+            
+            sequences.push(sequence);
+            targets.push(data[i][this.target]);
         }
 
-        // Split chronologically
+        return { sequences, targets };
+    }
+
+    prepareData(sequenceLength = 30) {
+        if (!this.data || this.data.length === 0) {
+            throw new Error('No data available. Please load CSV file first.');
+        }
+
+        if (sequenceLength >= this.data.length) {
+            throw new Error('Sequence length is too large for the available data');
+        }
+
+        const { sequences, targets } = this.createSequences(this.data, sequenceLength);
+        
+        // Split chronologically (first 80% train, last 20% test)
         const splitIndex = Math.floor(sequences.length * this.trainTestSplit);
         
         const X_train = sequences.slice(0, splitIndex);
-        const y_train = labels.slice(0, splitIndex);
+        const y_train = targets.slice(0, splitIndex);
         const X_test = sequences.slice(splitIndex);
-        const y_test = labels.slice(splitIndex);
+        const y_test = targets.slice(splitIndex);
 
         // Convert to tensors
+        const X_train_tensor = tf.tensor3d(X_train, [X_train.length, sequenceLength, this.features.length]);
+        const y_train_tensor = tf.tensor1d(y_train);
+        const X_test_tensor = tf.tensor3d(X_test, [X_test.length, sequenceLength, this.features.length]);
+        const y_test_tensor = tf.tensor1d(y_test);
+
+        console.log(`Data prepared: ${X_train.length} training samples, ${X_test.length} test samples`);
+        console.log(`Tensor shapes - X_train: ${X_train_tensor.shape}, y_train: ${y_train_tensor.shape}`);
+
         return {
-            X_train: tf.tensor3d(X_train),
-            y_train: tf.tensor1d(y_train),
-            X_test: tf.tensor3d(X_test),
-            y_test: tf.tensor1d(y_test),
-            normalization: { valueMin, valueMax, targetMin, targetMax },
-            featureNames: featureColumns
+            X_train: X_train_tensor,
+            y_train: y_train_tensor,
+            X_test: X_test_tensor,
+            y_test: y_test_tensor,
+            featureNames: this.features,
+            targetName: this.target
         };
     }
 
-    minMaxNormalize(data) {
-        if (Array.isArray(data[0])) {
-            // 2D array (features)
-            const mins = [];
-            const maxs = [];
-            const normalized = [];
-            
-            // Calculate min/max for each feature
-            for (let col = 0; col < data[0].length; col++) {
-                const column = data.map(row => row[col]);
-                mins.push(Math.min(...column));
-                maxs.push(Math.max(...column));
-            }
-
-            // Normalize each feature
-            for (let i = 0; i < data.length; i++) {
-                const normalizedRow = [];
-                for (let col = 0; col < data[i].length; col++) {
-                    const min = mins[col];
-                    const max = maxs[col];
-                    const range = max - min;
-                    normalizedRow.push(range === 0 ? 0 : (data[i][col] - min) / range);
-                }
-                normalized.push(normalizedRow);
-            }
-
-            return { normalized, min: mins, max: maxs };
-        } else {
-            // 1D array (target)
-            const min = Math.min(...data);
-            const max = Math.max(...data);
-            const range = max - min;
-            const normalized = data.map(val => range === 0 ? 0 : (val - min) / range);
-            return { normalized, min, max };
+    dispose() {
+        if (this.data) {
+            this.data = null;
         }
     }
-
-    dispose() {
-        this.data = null;
-        this.features = null;
-    }
 }
+
+export default DataLoader;
