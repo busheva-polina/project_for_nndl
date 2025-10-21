@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WTI Crude Oil Price Prediction</title>
+    <title>Multi-Stock Binary Classification</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -51,18 +52,13 @@
             width: 0%;
             transition: width 0.3s ease;
         }
-        .charts {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
         .chart-container {
             background-color: #111;
             padding: 15px;
             border-radius: 5px;
             border: 1px solid #333;
             min-height: 400px;
+            margin-top: 20px;
         }
         input[type="file"] {
             margin: 10px 0;
@@ -85,11 +81,32 @@
             width: 100% !important;
             height: 400px !important;
         }
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .config-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .config-item label {
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .config-item input, .config-item select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #333;
+            background-color: #222;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>WTI Crude Oil Price Prediction</h1>
+        <h1>Multi-Stock Binary Classification</h1>
         
         <div class="upload-section">
             <h2>1. Upload Data</h2>
@@ -100,20 +117,28 @@
 
         <div class="training-section">
             <h2>2. Configure & Train Model</h2>
-            <div>
-                <label>Sequence Length (lookback): </label>
-                <input type="number" id="sequenceLength" value="30" min="1" max="100">
-            </div>
-            <div>
-                <label>Epochs: </label>
-                <input type="number" id="epochs" value="50" min="1" max="200">
-            </div>
-            <div>
-                <label>Batch Size: </label>
-                <input type="number" id="batchSize" value="32" min="1" max="128">
+            <div class="config-grid">
+                <div class="config-item">
+                    <label>Sequence Length:</label>
+                    <input type="number" id="sequenceLength" value="30" min="1" max="100">
+                </div>
+                <div class="config-item">
+                    <label>Epochs:</label>
+                    <input type="number" id="epochs" value="50" min="1" max="200">
+                </div>
+                <div class="config-item">
+                    <label>Batch Size:</label>
+                    <input type="number" id="batchSize" value="32" min="1" max="128">
+                </div>
+                <div class="config-item">
+                    <label>Learning Rate:</label>
+                    <input type="number" id="learningRate" value="0.001" step="0.0001" min="0.0001" max="0.01">
+                </div>
             </div>
             <button id="trainModel">Train Model</button>
             <button id="stopTraining" disabled>Stop Training</button>
+            <button id="saveModel" disabled>Save Model</button>
+            <button id="loadModel" disabled>Load Model</button>
             
             <div class="progress-bar">
                 <div class="progress-fill" id="trainingProgress"></div>
@@ -122,16 +147,10 @@
         </div>
 
         <div class="results-section">
-            <h2>3. Results & Visualization</h2>
-            <div class="charts">
-                <div class="chart-container">
-                    <h3>Training vs Validation Loss</h3>
-                    <canvas id="lossChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h3>WTI Price Prediction</h3>
-                    <canvas id="predictionChart"></canvas>
-                </div>
+            <h2>3. Training Results</h2>
+            <div class="chart-container">
+                <h3>Training vs Validation Loss (RMSE)</h3>
+                <canvas id="lossChart"></canvas>
             </div>
             <div id="resultsStatus" class="status"></div>
         </div>
