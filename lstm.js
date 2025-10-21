@@ -1,117 +1,118 @@
-import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm';
+import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js';
 
 export class LSTMModel {
-    constructor(sequenceLength = 30, featureCount = 3) {
-        this.sequenceLength = sequenceLength;
-        this.featureCount = featureCount;
-        this.model = null;
-        this.trainingHistory = {
-            loss: [],
-            valLoss: [],
-            epochs: []
-        };
+  constructor(sequenceLength, featureCount) {
+    this.sequenceLength = sequenceLength;
+    this.featureCount = featureCount;
+    this.model = null;
+    this.trainingHistory = {
+      loss: [],
+      valLoss: []
+    };
+  }
+
+  buildModel() {
+    this.model = tf.sequential();
+    
+    // First LSTM layer
+    this.model.add(tf.layers.lstm({
+      units: 50,
+      returnSequences: true,
+      inputShape: [this.sequenceLength, this.featureCount]
+    }));
+    
+    // Second LSTM layer
+    this.model.add(tf.layers.lstm({
+      units: 50,
+      returnSequences: false
+    }));
+    
+    // Dense layers
+    this.model.add(tf.layers.dense({ units: 25, activation: 'relu' }));
+    this.model.add(tf.layers.dense({ units: 1 }));
+    
+    // Compile model with RMSE as loss (using MSE and then taking sqrt)
+    this.model.compile({
+      optimizer: tf.train.adam(0.001),
+      loss: 'meanSquaredError',
+      metrics: ['mse']
+    });
+    
+    return this.model;
+  }
+
+  async train(X_train, y_train, X_test, y_test, epochs = 100, batchSize = 32) {
+    if (!this.model) {
+      throw new Error('Model not built. Call buildModel() first.');
     }
 
-    buildModel() {
-        this.model = tf.sequential({
-            layers: [
-                tf.layers.lstm({
-                    units: 50,
-                    returnSequences: true,
-                    inputShape: [this.sequenceLength, this.featureCount]
-                }),
-                tf.layers.dropout({ rate: 0.2 }),
-                tf.layers.lstm({
-                    units: 50,
-                    returnSequences: false
-                }),
-                tf.layers.dropout({ rate: 0.2 }),
-                tf.layers.dense({ units: 25, activation: 'relu' }),
-                tf.layers.dense({ units: 1 })
-            ]
-        });
+    // Clear previous history
+    this.trainingHistory = { loss: [], valLoss: [] };
 
-        this.model.compile({
-            optimizer: tf.train.adam(0.001),
-            loss: 'meanSquaredError',
-            metrics: ['mse']
-        });
-
-        console.log('LSTM model built successfully');
-        return this.model;
-    }
-
-    async train(X_train, y_train, X_test, y_test, epochs = 100, callbacks = {}) {
-        if (!this.model) {
-            throw new Error('Model not built. Call buildModel() first.');
+    const history = await this.model.fit(X_train, y_train, {
+      epochs: epochs,
+      batchSize: batchSize,
+      validationData: [X_test, y_test],
+      callbacks: {
+        onEpochEnd: async (epoch, logs) => {
+          // Calculate RMSE from MSE
+          const trainRMSE = Math.sqrt(logs.loss);
+          const valRMSE = Math.sqrt(logs.val_loss);
+          
+          this.trainingHistory.loss.push(trainRMSE);
+          this.trainingHistory.valLoss.push(valRMSE);
+          
+          // Update UI if callback provided
+          if (this.onEpochEndCallback) {
+            this.onEpochEndCallback(epoch, trainRMSE, valRMSE);
+          }
+          
+          // Memory cleanup
+          await tf.nextFrame();
         }
+      }
+    });
 
-        const onEpochEnd = (epoch, logs) => {
-            this.trainingHistory.loss.push(logs.loss);
-            this.trainingHistory.valLoss.push(logs.val_loss);
-            this.trainingHistory.epochs.push(epoch + 1);
+    return history;
+  }
 
-            if (callbacks.onEpochEnd) {
-                callbacks.onEpochEnd(epoch, logs, this.trainingHistory);
-            }
-        };
+  setEpochCallback(callback) {
+    this.onEpochEndCallback = callback;
+  }
 
-        const history = await this.model.fit(X_train, y_train, {
-            epochs: epochs,
-            batchSize: 32,
-            validationData: [X_test, y_test],
-            callbacks: {
-                onEpochEnd: onEpochEnd.bind(this),
-                onTrainBegin: callbacks.onTrainBegin,
-                onTrainEnd: callbacks.onTrainEnd
-            },
-            verbose: 0
-        });
-
-        return history;
+  async predict(X) {
+    if (!this.model) {
+      throw new Error('Model not built. Call buildModel() first.');
     }
+    return this.model.predict(X);
+  }
 
-    async predict(X) {
-        if (!this.model) {
-            throw new Error('Model not built. Call buildModel() first.');
-        }
-        return this.model.predict(X);
+  async saveModel() {
+    if (!this.model) {
+      throw new Error('No model to save.');
     }
+    
+    const saveResult = await this.model.save('indexeddb://wti-prediction-model');
+    return saveResult;
+  }
 
-    async saveModel() {
-        if (!this.model) {
-            throw new Error('No model to save');
-        }
-
-        const saveResult = await this.model.save('indexeddb://wti-prediction-model');
-        console.log('Model saved successfully');
-        return saveResult;
+  async loadModel() {
+    try {
+      this.model = await tf.loadLayersModel('indexeddb://wti-prediction-model');
+      return true;
+    } catch (error) {
+      console.warn('No saved model found:', error);
+      return false;
     }
+  }
 
-    async loadModel() {
-        try {
-            this.model = await tf.loadLayersModel('indexeddb://wti-prediction-model');
-            console.log('Model loaded successfully');
-            return true;
-        } catch (error) {
-            console.log('No saved model found:', error.message);
-            return false;
-        }
+  dispose() {
+    if (this.model) {
+      this.model.dispose();
     }
+  }
 
-    getTrainingHistory() {
-        return this.trainingHistory;
-    }
-
-    dispose() {
-        if (this.model) {
-            this.model.dispose();
-        }
-    }
-
-    summary() {
-        if (this.model) {
-            this.model.summary();
-        }
-    }
+  getTrainingHistory() {
+    return this.trainingHistory;
+  }
 }
