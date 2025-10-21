@@ -14,40 +14,42 @@ class LSTMModel {
     buildModel() {
         this.model = tf.sequential();
         
-        // First LSTM layer with dropout for regularization
+        // First LSTM layer with dropout and recurrent dropout
         this.model.add(tf.layers.lstm({
-            units: 50,
+            units: 64,
             returnSequences: true,
             inputShape: this.inputShape,
             dropout: 0.2,
             recurrentDropout: 0.2
         }));
         
-        // Second LSTM layer
+        // Second LSTM layer with dropout
         this.model.add(tf.layers.lstm({
-            units: 50,
+            units: 32,
             returnSequences: false,
             dropout: 0.1
         }));
         
-        // Dense layers with reduced complexity for univariate prediction
+        // Batch normalization for better convergence
+        this.model.add(tf.layers.batchNormalization());
+        
+        // Dense layers with regularization
         this.model.add(tf.layers.dense({
-            units: 25, 
+            units: 16, 
             activation: 'relu',
             kernelRegularizer: tf.regularizers.l2({l2: 0.001})
         }));
         
-        this.model.add(tf.layers.dropout({rate: 0.2}));
+        this.model.add(tf.layers.dropout({rate: 0.3}));
         
-        // Output layer for single value prediction (WTI)
         this.model.add(tf.layers.dense({
             units: 1, 
             activation: 'linear'
         }));
 
-        // Compile model with optimized learning rate
+        // Compile model with lower learning rate
         this.model.compile({
-            optimizer: tf.train.adam(0.001),
+            optimizer: tf.train.adam(0.0005),
             loss: 'meanSquaredError',
             metrics: ['mse']
         });
