@@ -1,7 +1,7 @@
 class DataLoader {
     constructor() {
         this.data = null;
-        this.features = ['WTI', 'US Dollar Index Futures', 'Gold Futures'];
+        this.features = ['WTI', 'Gold Futures', 'US Dollar Index Futures'];
         this.sequenceLength = 30;
         this.trainTestSplit = 0.8;
     }
@@ -22,6 +22,9 @@ class DataLoader {
                         reject(new Error('CSV file is empty or could not be parsed'));
                         return;
                     }
+
+                    console.log('CSV headers:', Object.keys(results.data[0]));
+                    console.log('First few rows:', results.data.slice(0, 3));
                     
                     this.data = this.preprocessData(results.data);
                     resolve(this.data);
@@ -35,31 +38,22 @@ class DataLoader {
 
     preprocessData(rawData) {
         const cleanData = rawData.filter(row => {
-            return this.features.every(feature => 
-                row[feature] !== null && 
-                row[feature] !== undefined && 
-                !isNaN(row[feature])
-            );
+            return this.features.every(feature => {
+                const value = row[feature];
+                return value !== null && 
+                       value !== undefined && 
+                       !isNaN(value) &&
+                       typeof value === 'number';
+            });
         });
 
         if (cleanData.length === 0) {
-            throw new Error('No valid data remaining after cleaning');
+            throw new Error('No valid data remaining after cleaning. Check CSV headers match: WTI, Gold Futures, US Dollar Index Futures');
         }
 
         console.log(`Original data: ${rawData.length} rows, Clean data: ${cleanData.length} rows`);
+        console.log('Sample cleaned data:', cleanData.slice(0, 3));
         return cleanData;
-    }
-
-    calculateReturns(prices) {
-        const returns = [];
-        for (let i = 1; i < prices.length; i++) {
-            returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
-        }
-        return returns;
-    }
-
-    createBinaryLabels(returns, threshold = 0) {
-        return returns.map(ret => ret > threshold ? 1 : 0);
     }
 
     prepareData(sequenceLength = 30) {
@@ -77,7 +71,13 @@ class DataLoader {
         for (let i = sequenceLength; i < this.data.length - 1; i++) {
             const sequence = [];
             for (let j = i - sequenceLength; j < i; j++) {
-                const featureVector = this.features.map(feature => this.data[j][feature]);
+                const featureVector = this.features.map(feature => {
+                    const value = this.data[j][feature];
+                    if (value === null || value === undefined || isNaN(value)) {
+                        throw new Error(`Invalid data at row ${j}, feature ${feature}`);
+                    }
+                    return value;
+                });
                 sequence.push(featureVector);
             }
             
@@ -91,6 +91,10 @@ class DataLoader {
             targets.push(binaryLabels);
         }
 
+        if (sequences.length === 0) {
+            throw new Error('No sequences created. Check data length and sequence length.');
+        }
+
         const splitIndex = Math.floor(sequences.length * this.trainTestSplit);
         
         const X_train = sequences.slice(0, splitIndex);
@@ -98,6 +102,8 @@ class DataLoader {
         const X_test = sequences.slice(splitIndex);
         const y_test = targets.slice(splitIndex);
 
+        console.log(`Creating tensors: ${X_train.length} training, ${X_test.length} test samples`);
+        
         const X_train_tensor = tf.tensor3d(X_train, [X_train.length, sequenceLength, this.features.length]);
         const y_train_tensor = tf.tensor2d(y_train, [y_train.length, this.features.length]);
         const X_test_tensor = tf.tensor3d(X_test, [X_test.length, sequenceLength, this.features.length]);
