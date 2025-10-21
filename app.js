@@ -1,252 +1,226 @@
+import DataLoader from './data-loader.js';
+import GRUModel from './gru.js';
+
 class StockPredictionApp {
     constructor() {
         this.dataLoader = new DataLoader();
         this.model = new GRUModel();
+        this.trainingData = null;
         this.isTraining = false;
-        this.normalization = null;
-        this.chart = null;
-        this.lossChart = null;
         
-        this.initializeUI();
+        this.initializeEventListeners();
+        this.setupCharts();
     }
 
-    initializeUI() {
-        document.getElementById('csvFile').addEventListener('change', (e) => {
-            this.handleFileSelect(e);
-        });
-
-        document.getElementById('trainBtn').addEventListener('click', () => {
-            this.startTraining();
-        });
-
-        this.initializeCharts();
+    initializeEventListeners() {
+        document.getElementById('loadData').addEventListener('click', () => this.loadData());
+        document.getElementById('trainModel').addEventListener('click', () => this.trainModel());
+        document.getElementById('stopTraining').addEventListener('click', () => this.stopTraining());
     }
 
-    initializeCharts() {
-        // Prediction chart
-        const ctx = document.getElementById('predictionChart').getContext('2d');
-        this.chart = new Chart(ctx, {
+    setupCharts() {
+        this.lossChart = this.createChart('lossChart', 'Training vs Validation Loss', ['Loss', 'Validation Loss']);
+        this.predictionChart = this.createChart('predictionChart', 'WTI Price Prediction', ['Actual', 'Predicted']);
+    }
+
+    createChart(canvasId, title, labels) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        return new Chart(ctx, {
             type: 'line',
             data: {
-                datasets: [
-                    {
-                        label: 'Actual WTI',
-                        borderColor: '#3498db',
-                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: true
-                    },
-                    {
-                        label: 'Predicted WTI',
-                        borderColor: '#2ecc71',
-                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        fill: true
-                    }
-                ]
+                labels: [],
+                datasets: labels.map((label, index) => ({
+                    label: label,
+                    borderColor: index === 0 ? '#0066cc' : '#00cc66',
+                    backgroundColor: index === 0 ? 'rgba(0, 102, 204, 0.1)' : 'rgba(0, 204, 102, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    data: []
+                }))
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        display: true,
-                        title: { display: true, text: 'Time Steps' },
-                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        grid: { color: '#333' },
+                        ticks: { color: '#fff' }
                     },
                     y: {
-                        display: true,
-                        title: { display: true, text: 'Normalized Price' },
-                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        grid: { color: '#333' },
+                        ticks: { color: '#fff' }
                     }
                 },
                 plugins: {
                     legend: {
-                        labels: { color: '#ffffff' }
-                    }
-                }
-            }
-        });
-
-        // Loss chart
-        const lossCtx = document.getElementById('lossChart').getContext('2d');
-        this.lossChart = new Chart(lossCtx, {
-            type: 'line',
-            data: {
-                datasets: [
-                    {
-                        label: 'Training Loss',
-                        borderColor: '#3498db',
-                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 1
+                        labels: { color: '#fff' }
                     },
-                    {
-                        label: 'Validation Loss',
-                        borderColor: '#e74c3c',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 1
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
+                    title: {
                         display: true,
-                        title: { display: true, text: 'Epoch' },
-                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                    },
-                    y: {
-                        type: 'logarithmic',
-                        display: true,
-                        title: { display: true, text: 'Loss (MSE)' },
-                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        labels: { color: '#ffffff' }
+                        text: title,
+                        color: '#fff'
                     }
                 }
             }
         });
     }
 
-    async handleFileSelect(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    async loadData() {
+        const fileInput = document.getElementById('csvFile');
+        const file = fileInput.files[0];
+        
+        if (!file) {
+            this.updateStatus('fileStatus', 'Please select a CSV file', 'error');
+            return;
+        }
 
         try {
-            this.updateStatus('Loading CSV data...', 'info');
+            this.updateStatus('fileStatus', 'Loading CSV file...', 'info');
             await this.dataLoader.loadCSV(file);
-            this.updateStatus('CSV loaded successfully! Click "Start Training" to begin.', 'success');
-            document.getElementById('trainBtn').disabled = false;
+            this.updateStatus('fileStatus', 'CSV file loaded successfully!', 'success');
         } catch (error) {
-            this.updateStatus(`Error: ${error.message}`, 'error');
-            console.error('File loading error:', error);
+            this.updateStatus('fileStatus', `Error loading CSV: ${error.message}`, 'error');
+            console.error('Load error:', error);
         }
     }
 
-    async startTraining() {
-        if (this.isTraining) return;
+    async trainModel() {
+        if (this.isTraining) {
+            this.updateStatus('trainingStatus', 'Training already in progress', 'error');
+            return;
+        }
+
+        if (!this.dataLoader.data) {
+            this.updateStatus('trainingStatus', 'Please load CSV data first', 'error');
+            return;
+        }
 
         try {
             this.isTraining = true;
-            this.updateStatus('Preparing training data...', 'info');
-            document.getElementById('trainBtn').disabled = true;
-
-            const { X_train, y_train, X_test, y_test, normalization, featureNames } = 
-                this.dataLoader.prepareSequences();
+            document.getElementById('trainModel').disabled = true;
+            document.getElementById('stopTraining').disabled = false;
             
-            this.normalization = normalization;
+            const sequenceLength = parseInt(document.getElementById('sequenceLength').value);
+            const epochs = parseInt(document.getElementById('epochs').value);
+            const batchSize = parseInt(document.getElementById('batchSize').value);
 
-            this.updateStatus('Building GRU model...', 'info');
-            this.model.buildModel([X_train.shape[1], X_train.shape[2]]);
-
-            this.model.onEpochEnd = (epoch, logs) => {
-                this.updateTrainingProgress(epoch, logs);
-            };
-
-            this.updateStatus('Training started... This may take a few minutes.', 'info');
+            this.updateStatus('trainingStatus', 'Preparing data...', 'info');
             
-            await this.model.train(X_train, y_train, X_test, y_test, 30);
+            // Dispose previous tensors if they exist
+            if (this.trainingData) {
+                Object.values(this.trainingData).forEach(tensor => {
+                    if (tensor && tensor.dispose) tensor.dispose();
+                });
+            }
 
-            this.updateStatus('Training completed! Making predictions...', 'success');
-            this.makePredictions(X_test, y_test);
+            this.trainingData = this.dataLoader.prepareData(sequenceLength);
+            
+            this.updateStatus('trainingStatus', 'Building model...', 'info');
+            this.model.buildModel(sequenceLength, this.trainingData.featureNames.length);
 
-            // Cleanup tensors
-            tf.dispose([X_train, y_train, X_test, y_test]);
+            this.updateStatus('trainingStatus', 'Starting training...', 'info');
+            
+            const history = await this.model.trainModel(
+                this.trainingData.X_train,
+                this.trainingData.y_train,
+                this.trainingData.X_test,
+                this.trainingData.y_test,
+                epochs,
+                batchSize,
+                {
+                    onEpochEnd: (epoch, logs, history) => {
+                        const progress = ((epoch + 1) / epochs) * 100;
+                        document.getElementById('trainingProgress').style.width = `${progress}%`;
+                        
+                        this.updateStatus('trainingStatus', 
+                            `Epoch ${epoch + 1}/${epochs} - Loss: ${logs.loss.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}`, 
+                            'info'
+                        );
+                        
+                        this.updateLossChart(history);
+                    },
+                    onBatchEnd: (batch, batchCount, logs) => {
+                        // Optional: Update progress more frequently
+                    }
+                }
+            );
+
+            await this.makePredictions();
+            this.updateStatus('trainingStatus', 'Training completed successfully!', 'success');
 
         } catch (error) {
-            this.updateStatus(`Training failed: ${error.message}`, 'error');
+            this.updateStatus('trainingStatus', `Training error: ${error.message}`, 'error');
             console.error('Training error:', error);
         } finally {
             this.isTraining = false;
-            document.getElementById('trainBtn').disabled = false;
+            document.getElementById('trainModel').disabled = false;
+            document.getElementById('stopTraining').disabled = true;
+            document.getElementById('trainingProgress').style.width = '0%';
         }
-    }
-
-    updateTrainingProgress(epoch, logs) {
-        const progress = ((epoch + 1) / 30) * 100;
-        const progressBar = document.getElementById('trainingProgress');
-        progressBar.style.width = `${progress}%`;
-        progressBar.textContent = `${Math.round(progress)}%`;
-        
-        document.getElementById('currentEpoch').textContent = epoch + 1;
-        document.getElementById('currentLoss').textContent = logs.loss.toFixed(6);
-        document.getElementById('currentValLoss').textContent = logs.val_loss.toFixed(6);
-
-        // Update loss chart in real-time
-        const history = this.model.getTrainingHistory();
-        this.updateLossChart(history);
     }
 
     updateLossChart(history) {
-        const epochs = history.loss.map((_, i) => i + 1);
-        
-        this.lossChart.data.labels = epochs;
+        this.lossChart.data.labels = history.epochs;
         this.lossChart.data.datasets[0].data = history.loss;
         this.lossChart.data.datasets[1].data = history.val_loss;
-        this.lossChart.update('none');
+        this.lossChart.update();
     }
 
-    async makePredictions(X_test, y_test) {
+    async makePredictions() {
         try {
-            const predictions = this.model.predict(X_test);
-            const actualData = await y_test.data();
-            const predictedData = await predictions.data();
+            const predictions = await this.model.predict(this.trainingData.X_test);
+            const predictionsData = await predictions.data();
+            const actualData = await this.trainingData.y_test.data();
+            
+            predictions.dispose();
 
             // Update prediction chart
-            const timeSteps = Array.from({ length: actualData.length }, (_, i) => i);
-            
-            this.chart.data.labels = timeSteps;
-            this.chart.data.datasets[0].data = actualData;
-            this.chart.data.datasets[1].data = Array.from(predictedData);
-            this.chart.update();
+            this.predictionChart.data.labels = Array.from({length: actualData.length}, (_, i) => i + 1);
+            this.predictionChart.data.datasets[0].data = Array.from(actualData);
+            this.predictionChart.data.datasets[1].data = Array.from(predictionsData);
+            this.predictionChart.update();
 
-            // Calculate accuracy metrics
-            this.calculateMetrics(actualData, Array.from(predictedData));
+            // Calculate and display RMSE
+            const squaredErrors = actualData.map((actual, i) => Math.pow(actual - predictionsData[i], 2));
+            const mse = squaredErrors.reduce((sum, error) => sum + error, 0) / squaredErrors.length;
+            const rmse = Math.sqrt(mse);
 
-            predictions.dispose();
+            this.updateStatus('resultsStatus', 
+                `Prediction completed - RMSE: ${rmse.toFixed(4)}`, 
+                'success'
+            );
+
         } catch (error) {
+            this.updateStatus('resultsStatus', `Prediction error: ${error.message}`, 'error');
             console.error('Prediction error:', error);
-            this.updateStatus('Error making predictions', 'error');
         }
     }
 
-    calculateMetrics(actual, predicted) {
-        const mse = tf.tidy(() => {
-            const actualTensor = tf.tensor1d(actual);
-            const predictedTensor = tf.tensor1d(predicted);
-            return tf.metrics.meanSquaredError(actualTensor, predictedTensor).dataSync()[0];
-        });
-
-        const rmse = Math.sqrt(mse);
-        
-        document.getElementById('finalMSE').textContent = mse.toFixed(6);
-        document.getElementById('finalRMSE').textContent = rmse.toFixed(6);
+    stopTraining() {
+        if (this.isTraining) {
+            this.model.stopTraining();
+            this.updateStatus('trainingStatus', 'Training stopped by user', 'info');
+        }
     }
 
-    updateStatus(message, type) {
-        const statusElement = document.getElementById('status');
-        statusElement.textContent = message;
-        statusElement.className = `status ${type}`;
+    updateStatus(elementId, message, type) {
+        const element = document.getElementById(elementId);
+        element.textContent = message;
+        element.className = `status ${type}`;
     }
 
     dispose() {
         this.model.dispose();
         this.dataLoader.dispose();
-        if (this.chart) this.chart.destroy();
-        if (this.lossChart) this.lossChart.destroy();
+        if (this.trainingData) {
+            Object.values(this.trainingData).forEach(tensor => {
+                if (tensor && tensor.dispose) tensor.dispose();
+            });
+        }
     }
 }
 
-// Initialize application
+// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new StockPredictionApp();
+    new StockPredictionApp();
 });
