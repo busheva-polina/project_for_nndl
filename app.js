@@ -11,17 +11,14 @@ class StockPredictionApp {
     }
 
     initializeUI() {
-        // File input handler
         document.getElementById('csvFile').addEventListener('change', (e) => {
             this.handleFileSelect(e);
         });
 
-        // Train button handler
         document.getElementById('trainBtn').addEventListener('click', () => {
             this.startTraining();
         });
 
-        // Initialize charts
         this.initializeCharts();
     }
 
@@ -37,14 +34,16 @@ class StockPredictionApp {
                         borderColor: '#3498db',
                         backgroundColor: 'rgba(52, 152, 219, 0.1)',
                         borderWidth: 2,
-                        pointRadius: 0
+                        pointRadius: 0,
+                        fill: true
                     },
                     {
                         label: 'Predicted WTI',
                         borderColor: '#2ecc71',
                         backgroundColor: 'rgba(46, 204, 113, 0.1)',
                         borderWidth: 2,
-                        pointRadius: 0
+                        pointRadius: 0,
+                        fill: true
                     }
                 ]
             },
@@ -53,32 +52,19 @@ class StockPredictionApp {
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        type: 'linear',
                         display: true,
-                        title: {
-                            display: true,
-                            text: 'Time Steps'
-                        },
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        }
+                        title: { display: true, text: 'Time Steps' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
                     },
                     y: {
                         display: true,
-                        title: {
-                            display: true,
-                            text: 'WTI Price (Normalized)'
-                        },
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        }
+                        title: { display: true, text: 'Normalized Price' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
                     }
                 },
                 plugins: {
                     legend: {
-                        labels: {
-                            color: '#ffffff'
-                        }
+                        labels: { color: '#ffffff' }
                     }
                 }
             }
@@ -111,33 +97,20 @@ class StockPredictionApp {
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        type: 'linear',
                         display: true,
-                        title: {
-                            display: true,
-                            text: 'Epoch'
-                        },
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        }
+                        title: { display: true, text: 'Epoch' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
                     },
                     y: {
                         type: 'logarithmic',
                         display: true,
-                        title: {
-                            display: true,
-                            text: 'Loss (MSE)'
-                        },
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        }
+                        title: { display: true, text: 'Loss (MSE)' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
                     }
                 },
                 plugins: {
                     legend: {
-                        labels: {
-                            color: '#ffffff'
-                        }
+                        labels: { color: '#ffffff' }
                     }
                 }
             }
@@ -151,10 +124,10 @@ class StockPredictionApp {
         try {
             this.updateStatus('Loading CSV data...', 'info');
             await this.dataLoader.loadCSV(file);
-            this.updateStatus('CSV loaded successfully!', 'success');
+            this.updateStatus('CSV loaded successfully! Click "Start Training" to begin.', 'success');
             document.getElementById('trainBtn').disabled = false;
         } catch (error) {
-            this.updateStatus(`Error loading CSV: ${error.message}`, 'error');
+            this.updateStatus(`Error: ${error.message}`, 'error');
             console.error('File loading error:', error);
         }
     }
@@ -164,43 +137,33 @@ class StockPredictionApp {
 
         try {
             this.isTraining = true;
-            this.updateStatus('Preparing data...', 'info');
+            this.updateStatus('Preparing training data...', 'info');
             document.getElementById('trainBtn').disabled = true;
 
-            // Prepare sequences
             const { X_train, y_train, X_test, y_test, normalization, featureNames } = 
                 this.dataLoader.prepareSequences();
             
             this.normalization = normalization;
 
-            this.updateStatus('Building model...', 'info');
-            
-            // Build model
-            this.model.buildModel([X_train.shape[1], X_train.shape[2]], featureNames);
-            
-            // Display feature importance
-            this.displayFeatureImportance();
+            this.updateStatus('Building GRU model...', 'info');
+            this.model.buildModel([X_train.shape[1], X_train.shape[2]]);
 
-            // Set up training callback
             this.model.onEpochEnd = (epoch, logs) => {
                 this.updateTrainingProgress(epoch, logs);
             };
 
-            this.updateStatus('Training started...', 'info');
+            this.updateStatus('Training started... This may take a few minutes.', 'info');
             
-            // Train model
-            await this.model.train(X_train, y_train, X_test, y_test, 40);
+            await this.model.train(X_train, y_train, X_test, y_test, 30);
 
-            this.updateStatus('Training completed!', 'success');
-            
-            // Make predictions
+            this.updateStatus('Training completed! Making predictions...', 'success');
             this.makePredictions(X_test, y_test);
 
             // Cleanup tensors
             tf.dispose([X_train, y_train, X_test, y_test]);
 
         } catch (error) {
-            this.updateStatus(`Training error: ${error.message}`, 'error');
+            this.updateStatus(`Training failed: ${error.message}`, 'error');
             console.error('Training error:', error);
         } finally {
             this.isTraining = false;
@@ -208,25 +171,17 @@ class StockPredictionApp {
         }
     }
 
-    displayFeatureImportance() {
-        const importance = this.model.getFeatureImportance();
-        const featureList = document.getElementById('featureImportance');
-        
-        featureList.innerHTML = importance.map(([feature, score]) => 
-            `<li>${feature}: ${score.toFixed(2)}</li>`
-        ).join('');
-    }
-
     updateTrainingProgress(epoch, logs) {
-        const progress = ((epoch + 1) / 40) * 100;
-        document.getElementById('trainingProgress').style.width = `${progress}%`;
-        document.getElementById('trainingProgress').textContent = `${Math.round(progress)}%`;
+        const progress = ((epoch + 1) / 30) * 100;
+        const progressBar = document.getElementById('trainingProgress');
+        progressBar.style.width = `${progress}%`;
+        progressBar.textContent = `${Math.round(progress)}%`;
         
         document.getElementById('currentEpoch').textContent = epoch + 1;
         document.getElementById('currentLoss').textContent = logs.loss.toFixed(6);
         document.getElementById('currentValLoss').textContent = logs.val_loss.toFixed(6);
 
-        // Update loss chart
+        // Update loss chart in real-time
         const history = this.model.getTrainingHistory();
         this.updateLossChart(history);
     }
@@ -237,7 +192,7 @@ class StockPredictionApp {
         this.lossChart.data.labels = epochs;
         this.lossChart.data.datasets[0].data = history.loss;
         this.lossChart.data.datasets[1].data = history.val_loss;
-        this.lossChart.update();
+        this.lossChart.update('none');
     }
 
     async makePredictions(X_test, y_test) {
@@ -254,17 +209,17 @@ class StockPredictionApp {
             this.chart.data.datasets[1].data = Array.from(predictedData);
             this.chart.update();
 
-            // Calculate and display accuracy metrics
-            this.displayAccuracyMetrics(actualData, Array.from(predictedData));
+            // Calculate accuracy metrics
+            this.calculateMetrics(actualData, Array.from(predictedData));
 
-            // Cleanup
             predictions.dispose();
         } catch (error) {
             console.error('Prediction error:', error);
+            this.updateStatus('Error making predictions', 'error');
         }
     }
 
-    displayAccuracyMetrics(actual, predicted) {
+    calculateMetrics(actual, predicted) {
         const mse = tf.tidy(() => {
             const actualTensor = tf.tensor1d(actual);
             const predictedTensor = tf.tensor1d(predicted);
@@ -286,16 +241,12 @@ class StockPredictionApp {
     dispose() {
         this.model.dispose();
         this.dataLoader.dispose();
-        if (this.chart) {
-            this.chart.destroy();
-        }
-        if (this.lossChart) {
-            this.lossChart.destroy();
-        }
+        if (this.chart) this.chart.destroy();
+        if (this.lossChart) this.lossChart.destroy();
     }
 }
 
-// Initialize app when DOM is loaded
+// Initialize application
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new StockPredictionApp();
 });
