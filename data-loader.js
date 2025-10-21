@@ -2,7 +2,7 @@ class DataLoader {
     constructor() {
         this.data = null;
         this.features = ['WTI', 'US Dollar Index Futures', 'Gold Futures'];
-        this.target = 'WTI';
+        this.sequenceLength = 30;
         this.trainTestSplit = 0.8;
     }
 
@@ -34,7 +34,6 @@ class DataLoader {
     }
 
     preprocessData(rawData) {
-        // Remove rows with missing values in our selected features
         const cleanData = rawData.filter(row => {
             return this.features.every(feature => 
                 row[feature] !== null && 
@@ -51,22 +50,16 @@ class DataLoader {
         return cleanData;
     }
 
-    createSequences(data, sequenceLength) {
-        const sequences = [];
-        const targets = [];
-
-        for (let i = sequenceLength; i < data.length; i++) {
-            const sequence = [];
-            for (let j = i - sequenceLength; j < i; j++) {
-                const featureVector = this.features.map(feature => data[j][feature]);
-                sequence.push(featureVector);
-            }
-            
-            sequences.push(sequence);
-            targets.push(data[i][this.target]);
+    calculateReturns(prices) {
+        const returns = [];
+        for (let i = 1; i < prices.length; i++) {
+            returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
         }
+        return returns;
+    }
 
-        return { sequences, targets };
+    createBinaryLabels(returns, threshold = 0) {
+        return returns.map(ret => ret > threshold ? 1 : 0);
     }
 
     prepareData(sequenceLength = 30) {
@@ -78,9 +71,26 @@ class DataLoader {
             throw new Error('Sequence length is too large for the available data');
         }
 
-        const { sequences, targets } = this.createSequences(this.data, sequenceLength);
-        
-        // Split chronologically (first 80% train, last 20% test)
+        const sequences = [];
+        const targets = [];
+
+        for (let i = sequenceLength; i < this.data.length - 1; i++) {
+            const sequence = [];
+            for (let j = i - sequenceLength; j < i; j++) {
+                const featureVector = this.features.map(feature => this.data[j][feature]);
+                sequence.push(featureVector);
+            }
+            
+            sequences.push(sequence);
+            
+            const nextDayPrices = this.features.map(feature => this.data[i + 1][feature]);
+            const currentPrices = this.features.map(feature => this.data[i][feature]);
+            const returns = nextDayPrices.map((price, idx) => (price - currentPrices[idx]) / currentPrices[idx]);
+            const binaryLabels = returns.map(ret => ret > 0 ? 1 : 0);
+            
+            targets.push(binaryLabels);
+        }
+
         const splitIndex = Math.floor(sequences.length * this.trainTestSplit);
         
         const X_train = sequences.slice(0, splitIndex);
@@ -88,14 +98,13 @@ class DataLoader {
         const X_test = sequences.slice(splitIndex);
         const y_test = targets.slice(splitIndex);
 
-        // Convert to tensors
         const X_train_tensor = tf.tensor3d(X_train, [X_train.length, sequenceLength, this.features.length]);
-        const y_train_tensor = tf.tensor1d(y_train);
+        const y_train_tensor = tf.tensor2d(y_train, [y_train.length, this.features.length]);
         const X_test_tensor = tf.tensor3d(X_test, [X_test.length, sequenceLength, this.features.length]);
-        const y_test_tensor = tf.tensor1d(y_test);
+        const y_test_tensor = tf.tensor2d(y_test, [y_test.length, this.features.length]);
 
         console.log(`Data prepared: ${X_train.length} training samples, ${X_test.length} test samples`);
-        console.log(`Tensor shapes - X_train: ${X_train_tensor.shape}, y_train: ${y_train_tensor.shape}`);
+        console.log(`X_train shape: ${X_train_tensor.shape}, y_train shape: ${y_train_tensor.shape}`);
 
         return {
             X_train: X_train_tensor,
@@ -103,7 +112,7 @@ class DataLoader {
             X_test: X_test_tensor,
             y_test: y_test_tensor,
             featureNames: this.features,
-            targetName: this.target
+            stockSymbols: this.features
         };
     }
 
