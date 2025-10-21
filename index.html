@@ -4,28 +4,120 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WTI Oil Price Prediction - LSTM Model</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script type="importmap">
     {
         "imports": {
-            "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm": "./tfjs.js"
+            "@tensorflow/tfjs": "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"
         }
     }
     </script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #ffe4e6, #fecdd3);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #be123c;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h3 {
+            color: #be123c;
+            margin-top: 0;
+        }
+        
+        button {
+            background: #f43f5e;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover:not(:disabled) {
+            background: #e11d48;
+        }
+        
+        button:disabled {
+            background: #fda4af;
+            cursor: not-allowed;
+        }
+        
+        input[type="file"] {
+            margin-bottom: 15px;
+        }
+        
+        .info-text {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+    </style>
 </head>
 <body>
-    <!-- App will be rendered here by app.js -->
-    
-    <script type="module">
-        // Redirect imports for GitHub Pages compatibility
-        import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm';
-        window.tf = tf;
+    <div class="container">
+        <h1>📈 WTI Oil Price Prediction (LSTM)</h1>
         
-        // Import and initialize app
-        import { StockPredictionApp } from './app.js';
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            new StockPredictionApp();
-        });
-    </script>
+        <div class="card">
+            <h3>Upload Data</h3>
+            <input type="file" id="csvFile" accept=".csv">
+            <div id="fileInfo" class="info-text"></div>
+        </div>
+
+        <div class="card">
+            <h3>Model Controls</h3>
+            <div class="controls">
+                <button id="buildModelBtn">Build Model</button>
+                <button id="trainBtn" disabled>Train Model</button>
+                <button id="loadModelBtn">Load Saved Model</button>
+            </div>
+            <div class="info-text">
+                Epochs: <input type="number" id="epochs" value="50" min="1" max="200" style="width: 80px; margin-right: 15px;">
+                Batch Size: <input type="number" id="batchSize" value="32" min="1" max="128" style="width: 80px;">
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Training Progress</h3>
+            <div id="trainingInfo" class="info-text">Ready to train...</div>
+            <div id="lossChartContainer" style="height: 300px;">
+                <canvas id="lossChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Predictions</h3>
+            <div id="predictions" class="info-text">No predictions yet.</div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
 </body>
 </html>
