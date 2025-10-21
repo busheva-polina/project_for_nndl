@@ -1,187 +1,120 @@
-import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm';
+import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js';
 
 export class DataLoader {
-    constructor() {
-        this.data = [];
-        this.trainData = [];
-        this.testData = [];
-        this.sequenceLength = 30;
-        this.featureColumns = ['WTI', 'GOLD', 'US DOLLAR INDEX'];
-        this.targetColumn = 'WTI';
-    }
+  constructor() {
+    this.data = null;
+    this.trainData = null;
+    this.testData = null;
+    this.sequenceLength = 30;
+    this.featureColumns = ['WTI', 'GOLD', 'US DOLLAR INDEX'];
+    this.targetColumn = 'WTI';
+  }
 
-    async loadCSV(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            
-            reader.onload = (e) => {
-                try {
-                    const csvText = e.target.result;
-                    this.parseCSV(csvText);
-                    this.normalizeData();
-                    this.createSequences();
-                    resolve(this.data);
-                } catch (error) {
-                    reject(error);
-                }
-            };
-            
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsText(file);
-        });
-    }
-
-    parseCSV(csvText) {
-        const lines = csvText.trim().split('\n');
-        const headers = lines[0].split(';');
-        
-        this.data = [];
-        for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(';');
-            if (values.length !== headers.length) continue;
-
-            const row = {};
-            headers.forEach((header, index) => {
-                let value = values[index].trim();
-                
-                // Handle European decimal format (comma to dot)
-                if (value.includes(',')) {
-                    value = value.replace(',', '.');
-                }
-                
-                // Handle missing values
-                if (value === '#N/A' || value === '' || isNaN(parseFloat(value))) {
-                    value = null;
-                } else {
-                    value = parseFloat(value);
-                }
-                
-                row[header.trim()] = value;
-            });
-            
-            // Only add rows with valid data for all required columns
-            const hasValidData = this.featureColumns.every(col => 
-                row[col] !== null && !isNaN(row[col])
-            ) && row[this.targetColumn] !== null;
-            
-            if (hasValidData) {
-                this.data.push(row);
-            }
+  async loadCSV(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        try {
+          const csvText = e.target.result;
+          this.data = this.parseCSV(csvText);
+          resolve(this.data);
+        } catch (error) {
+          reject(error);
         }
-        
-        console.log(`Loaded ${this.data.length} valid records`);
-    }
+      };
+      
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  }
 
-    normalizeData() {
-        if (this.data.length === 0) return;
-
-        this.normalizationParams = {};
-        
-        this.featureColumns.forEach(col => {
-            const values = this.data.map(row => row[col]).filter(v => v !== null);
-            const mean = values.reduce((a, b) => a + b, 0) / values.length;
-            const std = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length);
-            
-            this.normalizationParams[col] = { mean, std };
-            
-            // Normalize the data
-            this.data.forEach(row => {
-                if (row[col] !== null) {
-                    row[`${col}_normalized`] = (row[col] - mean) / std;
-                }
-            });
-        });
-        
-        // Normalize target separately
-        const targetValues = this.data.map(row => row[this.targetColumn]);
-        const targetMean = targetValues.reduce((a, b) => a + b, 0) / targetValues.length;
-        const targetStd = Math.sqrt(targetValues.reduce((a, b) => a + Math.pow(b - targetMean, 2), 0) / targetValues.length);
-        
-        this.normalizationParams[this.targetColumn] = { mean: targetMean, std: targetStd };
-        
-        this.data.forEach(row => {
-            row[`${this.targetColumn}_normalized`] = (row[this.targetColumn] - targetMean) / targetStd;
-        });
-    }
-
-    createSequences() {
-        const sequences = [];
-        const targets = [];
-        
-        for (let i = this.sequenceLength; i < this.data.length; i++) {
-            const sequence = [];
-            let validSequence = true;
-            
-            for (let j = i - this.sequenceLength; j < i; j++) {
-                const features = this.featureColumns.map(col => {
-                    const value = this.data[j][`${col}_normalized`];
-                    if (value === null || isNaN(value)) {
-                        validSequence = false;
-                    }
-                    return value;
-                });
-                
-                if (validSequence) {
-                    sequence.push(features);
-                }
-            }
-            
-            if (validSequence && this.data[i][`${this.targetColumn}_normalized`] !== null) {
-                sequences.push(sequence);
-                targets.push([this.data[i][`${this.targetColumn}_normalized`]]);
-            }
+  parseCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    const headers = lines[0].split(';').map(h => h.trim());
+    
+    const data = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(';');
+      if (values.length !== headers.length) continue;
+      
+      const row = {};
+      headers.forEach((header, index) => {
+        let value = values[index].trim();
+        // Replace comma with dot for decimal numbers and handle #N/A
+        value = value.replace(',', '.');
+        if (value === '#N/A') {
+          row[header] = null;
+        } else {
+          row[header] = parseFloat(value);
         }
-        
-        // Split data (80% train, 20% test)
-        const splitIndex = Math.floor(sequences.length * 0.8);
-        
-        this.trainData = {
-            sequences: sequences.slice(0, splitIndex),
-            targets: targets.slice(0, splitIndex)
-        };
-        
-        this.testData = {
-            sequences: sequences.slice(splitIndex),
-            targets: targets.slice(splitIndex)
-        };
-        
-        console.log(`Created ${sequences.length} sequences (${this.trainData.sequences.length} train, ${this.testData.sequences.length} test)`);
+      });
+      
+      // Only add rows with valid numbers
+      if (Object.values(row).every(val => val !== null && !isNaN(val))) {
+        data.push(row);
+      }
+    }
+    
+    return data;
+  }
+
+  prepareSequences() {
+    if (!this.data || this.data.length === 0) {
+      throw new Error('No data available. Please load CSV first.');
     }
 
-    getTrainTensors() {
-        if (this.trainData.sequences.length === 0) {
-            throw new Error('No training data available');
-        }
-
-        const X = tf.tensor3d(this.trainData.sequences);
-        const y = tf.tensor2d(this.trainData.targets);
-        
-        return { X, y };
+    const sequences = [];
+    const targets = [];
+    
+    // Create sequences and targets
+    for (let i = 0; i < this.data.length - this.sequenceLength; i++) {
+      const sequence = [];
+      for (let j = 0; j < this.sequenceLength; j++) {
+        const row = this.data[i + j];
+        const features = this.featureColumns.map(col => row[col]);
+        sequence.push(features);
+      }
+      
+      const targetRow = this.data[i + this.sequenceLength];
+      sequences.push(sequence);
+      targets.push(targetRow[this.targetColumn]);
     }
 
-    getTestTensors() {
-        if (this.testData.sequences.length === 0) {
-            throw new Error('No test data available');
-        }
+    // Split into train/test (80/20 split)
+    const splitIndex = Math.floor(sequences.length * 0.8);
+    
+    const X_train = sequences.slice(0, splitIndex);
+    const y_train = targets.slice(0, splitIndex);
+    const X_test = sequences.slice(splitIndex);
+    const y_test = targets.slice(splitIndex);
 
-        const X = tf.tensor3d(this.testData.sequences);
-        const y = tf.tensor2d(this.testData.targets);
-        
-        return { X, y };
-    }
+    // Convert to tensors
+    const X_train_tensor = tf.tensor3d(X_train);
+    const y_train_tensor = tf.tensor1d(y_train);
+    const X_test_tensor = tf.tensor3d(X_test);
+    const y_test_tensor = tf.tensor1d(y_test);
 
-    denormalizeTarget(normalizedValues) {
-        const params = this.normalizationParams[this.targetColumn];
-        if (!params) return normalizedValues;
-        
-        if (normalizedValues instanceof tf.Tensor) {
-            return normalizedValues.mul(params.std).add(params.mean);
-        }
-        
-        return normalizedValues.map(val => val * params.std + params.mean);
-    }
+    return {
+      X_train: X_train_tensor,
+      y_train: y_train_tensor,
+      X_test: X_test_tensor,
+      y_test: y_test_tensor,
+      trainSize: X_train.length,
+      testSize: X_test.length
+    };
+  }
 
-    dispose() {
-        // Cleanup if needed
+  dispose() {
+    if (this.trainData) {
+      Object.values(this.trainData).forEach(tensor => {
+        if (tensor instanceof tf.Tensor) tensor.dispose();
+      });
     }
+    if (this.testData) {
+      Object.values(this.testData).forEach(tensor => {
+        if (tensor instanceof tf.Tensor) tensor.dispose();
+      });
+    }
+  }
 }
