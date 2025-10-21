@@ -7,6 +7,7 @@ class StockPredictionApp {
         this.model = new GRUModel();
         this.trainingData = null;
         this.isTraining = false;
+        this.lossChart = null;
         
         this.initializeEventListeners();
         this.setupCharts();
@@ -16,37 +17,54 @@ class StockPredictionApp {
         document.getElementById('loadData').addEventListener('click', () => this.loadData());
         document.getElementById('trainModel').addEventListener('click', () => this.trainModel());
         document.getElementById('stopTraining').addEventListener('click', () => this.stopTraining());
+        document.getElementById('saveModel').addEventListener('click', () => this.saveModel());
+        document.getElementById('loadModel').addEventListener('click', () => this.loadModel());
     }
 
     setupCharts() {
-        this.lossChart = this.createChart('lossChart', 'Training vs Validation Loss', ['Loss', 'Validation Loss']);
-        this.predictionChart = this.createChart('predictionChart', 'WTI Price Prediction', ['Actual', 'Predicted']);
-    }
-
-    createChart(canvasId, title, labels) {
-        const ctx = document.getElementById(canvasId).getContext('2d');
-        return new Chart(ctx, {
+        const ctx = document.getElementById('lossChart').getContext('2d');
+        this.lossChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
-                datasets: labels.map((label, index) => ({
-                    label: label,
-                    borderColor: index === 0 ? '#0066cc' : '#00cc66',
-                    backgroundColor: index === 0 ? 'rgba(0, 102, 204, 0.1)' : 'rgba(0, 204, 102, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    data: []
-                }))
+                datasets: [
+                    {
+                        label: 'Training Loss',
+                        borderColor: '#0066cc',
+                        backgroundColor: 'rgba(0, 102, 204, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        data: []
+                    },
+                    {
+                        label: 'Validation Loss',
+                        borderColor: '#00cc66',
+                        backgroundColor: 'rgba(0, 204, 102, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        data: []
+                    }
+                ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
                     x: {
+                        title: {
+                            display: true,
+                            text: 'Epoch',
+                            color: '#fff'
+                        },
                         grid: { color: '#333' },
                         ticks: { color: '#fff' }
                     },
                     y: {
+                        title: {
+                            display: true,
+                            text: 'Loss (Binary Crossentropy)',
+                            color: '#fff'
+                        },
                         grid: { color: '#333' },
                         ticks: { color: '#fff' }
                     }
@@ -57,8 +75,9 @@ class StockPredictionApp {
                     },
                     title: {
                         display: true,
-                        text: title,
-                        color: '#fff'
+                        text: 'Training Progress',
+                        color: '#fff',
+                        font: { size: 16 }
                     }
                 }
             }
@@ -77,7 +96,8 @@ class StockPredictionApp {
         try {
             this.updateStatus('fileStatus', 'Loading CSV file...', 'info');
             await this.dataLoader.loadCSV(file);
-            this.updateStatus('fileStatus', 'CSV file loaded successfully!', 'success');
+            this.updateStatus('fileStatus', 'CSV file loaded successfully! Ready for training.', 'success');
+            document.getElementById('trainModel').disabled = false;
         } catch (error) {
             this.updateStatus('fileStatus', `Error loading CSV: ${error.message}`, 'error');
             console.error('Load error:', error);
@@ -97,28 +117,34 @@ class StockPredictionApp {
 
         try {
             this.isTraining = true;
-            document.getElementById('trainModel').disabled = true;
-            document.getElementById('stopTraining').disabled = false;
+            this.setTrainingUIState(true);
             
             const sequenceLength = parseInt(document.getElementById('sequenceLength').value);
             const epochs = parseInt(document.getElementById('epochs').value);
             const batchSize = parseInt(document.getElementById('batchSize').value);
+            const learningRate = parseFloat(document.getElementById('learningRate').value);
 
             this.updateStatus('trainingStatus', 'Preparing data...', 'info');
             
-            // Dispose previous tensors if they exist
             if (this.trainingData) {
-                Object.values(this.trainingData).forEach(tensor => {
-                    if (tensor && tensor.dispose) tensor.dispose();
-                });
+                this.disposeTrainingData();
             }
 
             this.trainingData = this.dataLoader.prepareData(sequenceLength);
             
             this.updateStatus('trainingStatus', 'Building model...', 'info');
-            this.model.buildModel(sequenceLength, this.trainingData.featureNames.length);
+            this.model.buildModel(
+                sequenceLength, 
+                this.trainingData.featureNames.length, 
+                this.trainingData.featureNames.length, 
+                learningRate
+            );
 
             this.updateStatus('trainingStatus', 'Starting training...', 'info');
+            this.lossChart.data.labels = [];
+            this.lossChart.data.datasets[0].data = [];
+            this.lossChart.data.datasets[1].data = [];
+            this.lossChart.update();
             
             const history = await this.model.trainModel(
                 this.trainingData.X_train,
@@ -133,28 +159,30 @@ class StockPredictionApp {
                         document.getElementById('trainingProgress').style.width = `${progress}%`;
                         
                         this.updateStatus('trainingStatus', 
-                            `Epoch ${epoch + 1}/${epochs} - Loss: ${logs.loss.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}`, 
+                            `Epoch ${epoch + 1}/${epochs} - Loss: ${logs.loss.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}, Acc: ${logs.acc?.toFixed(4)}`, 
                             'info'
                         );
                         
                         this.updateLossChart(history);
-                    },
-                    onBatchEnd: (batch, batchCount, logs) => {
-                        // Optional: Update progress more frequently
                     }
                 }
             );
 
-            await this.makePredictions();
-            this.updateStatus('trainingStatus', 'Training completed successfully!', 'success');
+            await this.model.saveWeights();
+            document.getElementById('saveModel').disabled = false;
+            document.getElementById('loadModel').disabled = false;
+            
+            this.updateStatus('trainingStatus', 
+                `Training completed! Final Loss: ${history.loss[history.loss.length-1].toFixed(4)}, Val Loss: ${history.val_loss[history.val_loss.length-1].toFixed(4)}`, 
+                'success'
+            );
 
         } catch (error) {
             this.updateStatus('trainingStatus', `Training error: ${error.message}`, 'error');
             console.error('Training error:', error);
         } finally {
             this.isTraining = false;
-            document.getElementById('trainModel').disabled = false;
-            document.getElementById('stopTraining').disabled = true;
+            this.setTrainingUIState(false);
             document.getElementById('trainingProgress').style.width = '0%';
         }
     }
@@ -166,34 +194,35 @@ class StockPredictionApp {
         this.lossChart.update();
     }
 
-    async makePredictions() {
+    async saveModel() {
         try {
-            const predictions = await this.model.predict(this.trainingData.X_test);
-            const predictionsData = await predictions.data();
-            const actualData = await this.trainingData.y_test.data();
-            
-            predictions.dispose();
-
-            // Update prediction chart
-            this.predictionChart.data.labels = Array.from({length: actualData.length}, (_, i) => i + 1);
-            this.predictionChart.data.datasets[0].data = Array.from(actualData);
-            this.predictionChart.data.datasets[1].data = Array.from(predictionsData);
-            this.predictionChart.update();
-
-            // Calculate and display RMSE
-            const squaredErrors = actualData.map((actual, i) => Math.pow(actual - predictionsData[i], 2));
-            const mse = squaredErrors.reduce((sum, error) => sum + error, 0) / squaredErrors.length;
-            const rmse = Math.sqrt(mse);
-
-            this.updateStatus('resultsStatus', 
-                `Prediction completed - RMSE: ${rmse.toFixed(4)}`, 
-                'success'
-            );
-
+            this.updateStatus('resultsStatus', 'Saving model...', 'info');
+            await this.model.saveModel();
+            this.updateStatus('resultsStatus', 'Model saved successfully!', 'success');
         } catch (error) {
-            this.updateStatus('resultsStatus', `Prediction error: ${error.message}`, 'error');
-            console.error('Prediction error:', error);
+            this.updateStatus('resultsStatus', `Error saving model: ${error.message}`, 'error');
         }
+    }
+
+    async loadModel() {
+        try {
+            this.updateStatus('resultsStatus', 'Loading model...', 'info');
+            const success = await this.model.loadModel();
+            if (success) {
+                this.updateStatus('resultsStatus', 'Model loaded successfully from browser storage!', 'success');
+                document.getElementById('saveModel').disabled = false;
+            } else {
+                this.updateStatus('resultsStatus', 'No saved model found. Please train a model first.', 'error');
+            }
+        } catch (error) {
+            this.updateStatus('resultsStatus', `Error loading model: ${error.message}`, 'error');
+        }
+    }
+
+    setTrainingUIState(training) {
+        document.getElementById('trainModel').disabled = training;
+        document.getElementById('stopTraining').disabled = !training;
+        document.getElementById('loadData').disabled = training;
     }
 
     stopTraining() {
@@ -209,18 +238,24 @@ class StockPredictionApp {
         element.className = `status ${type}`;
     }
 
+    disposeTrainingData() {
+        if (this.trainingData) {
+            Object.values(this.trainingData).forEach(tensor => {
+                if (tensor && tensor.dispose && tensor instanceof tf.Tensor) {
+                    tensor.dispose();
+                }
+            });
+            this.trainingData = null;
+        }
+    }
+
     dispose() {
         this.model.dispose();
         this.dataLoader.dispose();
-        if (this.trainingData) {
-            Object.values(this.trainingData).forEach(tensor => {
-                if (tensor && tensor.dispose) tensor.dispose();
-            });
-        }
+        this.disposeTrainingData();
     }
 }
 
-// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new StockPredictionApp();
 });
