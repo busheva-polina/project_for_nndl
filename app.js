@@ -21,6 +21,9 @@ class StockPredictionApp {
             this.startTraining();
         });
 
+        // Enable train button by default for testing
+        trainBtn.disabled = false;
+
         const featureNames = [
             'WTI (Target)',
             'Gold Futures', 
@@ -46,17 +49,29 @@ class StockPredictionApp {
             document.getElementById('trainBtn').disabled = false;
         } catch (error) {
             this.updateStatus(`Error loading file: ${error.message}`, 'error');
+            document.getElementById('trainBtn').disabled = false;
         }
     }
 
     async startTraining() {
-        if (this.isTraining) return;
+        if (this.isTraining) {
+            this.updateStatus('Training already in progress...', 'info');
+            return;
+        }
         
         try {
             this.isTraining = true;
             this.trainingLogs = [];
             this.updateStatus('Preparing data...', 'info');
-            document.getElementById('trainBtn').disabled = true;
+            
+            const trainBtn = document.getElementById('trainBtn');
+            trainBtn.disabled = true;
+            trainBtn.textContent = 'Training...';
+            
+            // Check if data is loaded
+            if (!this.dataLoader.data) {
+                throw new Error('Please upload a CSV file first');
+            }
             
             const { X_train, y_train, X_test, y_test, featureNames } = this.dataLoader.prepareData();
             
@@ -76,7 +91,7 @@ class StockPredictionApp {
                 this.plotTrainingHistory();
             };
             
-            this.updateStatus('Starting training...', 'info');
+            this.updateStatus('Starting training... This may take a few minutes.', 'info');
             await this.predictor.trainModel(X_train, y_train, X_test, y_test, 40);
             
             this.updateStatus('Making predictions...', 'info');
@@ -86,6 +101,7 @@ class StockPredictionApp {
             
             this.updateStatus('Training completed successfully!', 'success');
             
+            // Clean up tensors
             X_train.dispose();
             y_train.dispose();
             X_test.dispose();
@@ -94,10 +110,12 @@ class StockPredictionApp {
             
         } catch (error) {
             this.updateStatus(`Training error: ${error.message}`, 'error');
-            console.error(error);
+            console.error('Training error:', error);
         } finally {
             this.isTraining = false;
-            document.getElementById('trainBtn').disabled = false;
+            const trainBtn = document.getElementById('trainBtn');
+            trainBtn.disabled = false;
+            trainBtn.textContent = 'Train Model';
         }
     }
 
@@ -220,6 +238,7 @@ class StockPredictionApp {
     }
 }
 
+// Initialize app when page loads
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new StockPredictionApp();
