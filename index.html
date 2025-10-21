@@ -4,429 +4,95 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WTI Crude Oil Price Prediction</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0"></script>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
     <style>
-        :root {
-            --primary-color: #3b82f6;
-            --success-color: #10b981;
-            --error-color: #ef4444;
-            --warning-color: #f59e0b;
-            --gray-50: #f9fafb;
-            --gray-100: #f3f4f6;
-            --gray-200: #e5e7eb;
-            --gray-300: #d1d5db;
-            --gray-400: #9ca3af;
-            --gray-500: #6b7280;
-            --gray-600: #4b5563;
-            --gray-700: #374151;
-            --gray-800: #1f2937;
-            --gray-900: #111827;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            line-height: 1.6;
-            color: var(--gray-800);
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }
-        
-        .app-container {
-            max-width: 1400px;
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
+            background-color: #f5f5f5;
         }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            color: white;
-        }
-        
-        .header h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .header p {
-            font-size: 1.1rem;
-            opacity: 0.9;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-            margin-bottom: 30px;
-        }
-        
-        @media (max-width: 1024px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .card {
+        .container {
             background: white;
-            border-radius: 16px;
-            padding: 30px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-            border: 1px solid var(--gray-200);
-            backdrop-filter: blur(10px);
-        }
-        
-        .card h2 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--gray-800);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
-        
-        .card h2::before {
-            content: '';
-            width: 4px;
-            height: 20px;
-            background: var(--primary-color);
-            border-radius: 2px;
-        }
-        
-        .upload-area {
-            border: 2px dashed var(--gray-300);
-            border-radius: 12px;
-            padding: 40px 20px;
+        .upload-section {
+            border: 2px dashed #ccc;
+            padding: 20px;
             text-align: center;
-            transition: all 0.3s ease;
-            background: var(--gray-50);
+            margin-bottom: 20px;
         }
-        
-        .upload-area:hover {
-            border-color: var(--primary-color);
-            background: var(--gray-100);
-        }
-        
-        .upload-area.dragover {
-            border-color: var(--primary-color);
-            background: var(--primary-color);
+        .button {
+            background-color: #007cba;
             color: white;
-        }
-        
-        .btn {
-            background: var(--primary-color);
-            color: white;
+            padding: 10px 20px;
             border: none;
-            padding: 12px 28px;
-            border-radius: 10px;
-            font-size: 1rem;
-            font-weight: 600;
+            border-radius: 4px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
+            font-size: 16px;
         }
-        
-        .btn:hover:not(:disabled) {
-            background: #2563eb;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-        }
-        
-        .btn:disabled {
-            background: var(--gray-400);
+        .button:disabled {
+            background-color: #ccc;
             cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
         }
-        
-        .btn-success {
-            background: var(--success-color);
-        }
-        
-        .btn-success:hover:not(:disabled) {
-            background: #059669;
-        }
-        
-        .training-controls {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-        
-        .progress-container {
-            background: var(--gray-100);
-            border-radius: 10px;
-            padding: 20px;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 12px;
-            background: var(--gray-300);
-            border-radius: 6px;
-            overflow: hidden;
-            margin: 10px 0;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--primary-color), var(--success-color));
-            border-radius: 6px;
-            transition: width 0.3s ease;
-            width: 0%;
-        }
-        
-        .progress-info {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.9rem;
-            color: var(--gray-600);
-        }
-        
-        .chart-container {
-            position: relative;
-            height: 350px;
-            margin: 10px 0;
-        }
-        
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-        
-        .metric-card {
-            background: var(--gray-50);
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            border-left: 4px solid var(--primary-color);
-        }
-        
-        .metric-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--gray-800);
-            margin-bottom: 5px;
-        }
-        
-        .metric-label {
-            font-size: 0.9rem;
-            color: var(--gray-600);
-        }
-        
         .status {
-            padding: 15px;
-            border-radius: 10px;
-            margin: 15px 0;
-            font-weight: 500;
-            border-left: 4px solid;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
         }
-        
         .status.info {
-            background: #dbeafe;
-            border-left-color: var(--primary-color);
-            color: #1e40af;
+            background-color: #e7f3ff;
+            border: 1px solid #b3d9ff;
         }
-        
-        .status.success {
-            background: #dcfce7;
-            border-left-color: var(--success-color);
-            color: #166534;
-        }
-        
         .status.error {
-            background: #fee2e2;
-            border-left-color: var(--error-color);
-            color: #991b1b;
+            background-color: #ffe7e7;
+            border: 1px solid #ffb3b3;
+            color: #d00;
         }
-        
-        .status.warning {
-            background: #fef3c7;
-            border-left-color: var(--warning-color);
-            color: #92400e;
+        .chart-container {
+            width: 100%;
+            height: 400px;
+            margin: 20px 0;
         }
-        
-        .loading-spinner {
-            display: none;
-            text-align: center;
-            padding: 20px;
-        }
-        
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid var(--gray-300);
-            border-left: 4px solid var(--primary-color);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .full-width {
-            grid-column: 1 / -1;
-        }
-        
-        .charts-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-        }
-        
-        @media (max-width: 768px) {
-            .charts-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .metrics-grid {
-                grid-template-columns: 1fr;
-            }
+        progress {
+            width: 100%;
+            height: 20px;
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
-    <div class="app-container">
-        <div class="header">
-            <h1>WTI Crude Oil Price Prediction</h1>
-            <p>Improved LSTM Model with 20 Epochs & Better Regularization</p>
+    <div class="container">
+        <h1>WTI Crude Oil Price Prediction</h1>
+        <p>Upload your COMBINED.csv file to train an LSTM model for predicting WTI crude oil prices.</p>
+        
+        <div class="upload-section">
+            <input type="file" id="csvFile" accept=".csv" />
+            <br><br>
+            <button id="trainBtn" class="button">Train Model</button>
         </div>
         
-        <div class="main-content">
-            <div class="card">
-                <h2>Data Upload</h2>
-                <div class="upload-area" id="uploadArea">
-                    <input type="file" id="csvFile" accept=".csv" style="display: none;">
-                    <div style="margin-bottom: 15px;">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14,2 14,8 20,8"></polyline>
-                            <line x1="16" y1="13" x2="8" x2="13"></line>
-                            <line x1="16" y1="17" x2="8" x2="17"></line>
-                            <polyline points="10,9 9,9 8,9"></polyline>
-                        </svg>
-                    </div>
-                    <h3 style="margin-bottom: 10px; color: var(--gray-700);">Upload Your Market Data CSV</h3>
-                    <p style="color: var(--gray-500); margin-bottom: 20px; font-size: 0.9rem;">
-                        Supported files: COMBINED.csv with WTI, Gold Futures, US Dollar Index, etc.
-                    </p>
-                    <button class="btn" onclick="document.getElementById('csvFile').click()">
-                        Choose File
-                    </button>
-                </div>
-                <div id="fileStatus" class="status info" style="display: none;">
-                    Please select a CSV file to begin
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Model Training</h2>
-                <div class="training-controls">
-                    <button class="btn btn-success" id="trainBtn" disabled>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                        </svg>
-                        Train Model (20 Epochs)
-                    </button>
-                    
-                    <div class="progress-container">
-                        <div class="progress-info">
-                            <span>Training Progress</span>
-                            <span id="progressText">0/20 epochs</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="trainingProgressFill" style="width: 0%"></div>
-                        </div>
-                        <div id="trainingStatus" class="status info">
-                            Ready to train model with improved architecture
-                        </div>
-                    </div>
-                    
-                    <div class="loading-spinner" id="loadingSpinner">
-                        <div class="spinner"></div>
-                        <p style="margin-top: 10px; color: var(--gray-600);">Processing data...</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card full-width">
-            <h2>Training Analytics</h2>
-            <div id="status" class="status info">Waiting for data upload...</div>
-            
-            <div class="charts-grid">
-                <div>
-                    <h3 style="margin-bottom: 15px; color: var(--gray-700);">Loss Curves</h3>
-                    <div class="chart-container">
-                        <canvas id="lossChart"></canvas>
-                    </div>
-                </div>
-                
-                <div>
-                    <h3 style="margin-bottom: 15px; color: var(--gray-700);">Predictions</h3>
-                    <div class="chart-container">
-                        <canvas id="predictionChart"></canvas>
-                    </div>
-                </div>
-            </div>
-            
-            <div id="metrics" style="margin-top: 20px;">
-                <!-- Metrics will be inserted here -->
-            </div>
-        </div>
+        <div id="status" class="status info">Please upload a CSV file to begin</div>
+        <div id="progress"></div>
+    </div>
+
+    <div class="container">
+        <h2>Training Progress</h2>
+        <div id="lossChart" class="chart-container"></div>
+    </div>
+
+    <div class="container">
+        <h2>Predictions vs Actual</h2>
+        <div id="predictionChart" class="chart-container"></div>
     </div>
 
     <script src="data-loader.js"></script>
     <script src="lstm.js"></script>
     <script src="app.js"></script>
-    
-    <script>
-        // Enhanced file upload with drag & drop
-        document.addEventListener('DOMContentLoaded', function() {
-            const uploadArea = document.getElementById('uploadArea');
-            const fileInput = document.getElementById('csvFile');
-            const fileStatus = document.getElementById('fileStatus');
-            
-            // Drag and drop functionality
-            uploadArea.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                uploadArea.classList.add('dragover');
-            });
-            
-            uploadArea.addEventListener('dragleave', function() {
-                uploadArea.classList.remove('dragover');
-            });
-            
-            uploadArea.addEventListener('drop', function(e) {
-                e.preventDefault();
-                uploadArea.classList.remove('dragover');
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    fileInput.files = files;
-                    const event = new Event('change');
-                    fileInput.dispatchEvent(event);
-                }
-            });
-            
-            // File input change handler
-            fileInput.addEventListener('change', function() {
-                if (this.files.length > 0) {
-                    const fileName =
+</body>
+</html>
