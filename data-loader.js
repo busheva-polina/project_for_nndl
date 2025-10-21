@@ -34,12 +34,9 @@ class DataLoader {
         const headers = lines[0].split(',').map(h => h.trim());
         
         // Validate required columns
-        const requiredColumns = ['Date', 'WTI'];
-        requiredColumns.forEach(col => {
-            if (!headers.includes(col)) {
-                throw new Error(`Missing required column: ${col}`);
-            }
-        });
+        if (!headers.includes('Date') || !headers.includes('WTI')) {
+            throw new Error('CSV must contain Date and WTI columns');
+        }
 
         const parsedData = [];
         for (let i = 1; i < lines.length; i++) {
@@ -51,7 +48,15 @@ class DataLoader {
                 const value = parseFloat(values[index]);
                 row[header] = isNaN(value) ? values[index] : value;
             });
-            parsedData.push(row);
+            
+            // Only add rows with valid WTI data
+            if (row[this.target] !== undefined && !isNaN(row[this.target])) {
+                parsedData.push(row);
+            }
+        }
+
+        if (parsedData.length === 0) {
+            throw new Error('No valid data found in CSV');
         }
 
         this.data = parsedData;
@@ -66,11 +71,11 @@ class DataLoader {
         const featureColumns = this.features;
         const targetColumn = this.target;
 
-        // Convert to tensors
+        // Extract values and handle missing data
         const values = this.data.map(row => 
             featureColumns.map(col => row[col] || 0)
         );
-        const targets = this.data.map(row => row[targetColumn] || 0);
+        const targets = this.data.map(row => row[targetColumn]);
 
         // Normalize data
         const { normalized: normalizedValues, min: valueMin, max: valueMax } = 
@@ -87,7 +92,7 @@ class DataLoader {
             labels.push(normalizedTargets[i]);
         }
 
-        // Split into train/test
+        // Split chronologically
         const splitIndex = Math.floor(sequences.length * this.trainTestSplit);
         
         const X_train = sequences.slice(0, splitIndex);
@@ -95,6 +100,7 @@ class DataLoader {
         const X_test = sequences.slice(splitIndex);
         const y_test = labels.slice(splitIndex);
 
+        // Convert to tensors
         return {
             X_train: tf.tensor3d(X_train),
             y_train: tf.tensor1d(y_train),
@@ -112,18 +118,21 @@ class DataLoader {
             const maxs = [];
             const normalized = [];
             
+            // Calculate min/max for each feature
             for (let col = 0; col < data[0].length; col++) {
                 const column = data.map(row => row[col]);
                 mins.push(Math.min(...column));
                 maxs.push(Math.max(...column));
             }
 
+            // Normalize each feature
             for (let i = 0; i < data.length; i++) {
                 const normalizedRow = [];
                 for (let col = 0; col < data[i].length; col++) {
                     const min = mins[col];
                     const max = maxs[col];
-                    normalizedRow.push((data[i][col] - min) / (max - min));
+                    const range = max - min;
+                    normalizedRow.push(range === 0 ? 0 : (data[i][col] - min) / range);
                 }
                 normalized.push(normalizedRow);
             }
@@ -133,12 +142,14 @@ class DataLoader {
             // 1D array (target)
             const min = Math.min(...data);
             const max = Math.max(...data);
-            const normalized = data.map(val => (val - min) / (max - min));
+            const range = max - min;
+            const normalized = data.map(val => range === 0 ? 0 : (val - min) / range);
             return { normalized, min, max };
         }
     }
 
     dispose() {
-        // Cleanup if needed
+        this.data = null;
+        this.features = null;
     }
 }
