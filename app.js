@@ -1,261 +1,244 @@
-import DataLoader from './data-loader.js';
-import GRUModel from './gru.js';
+import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm';
+import { DataLoader } from './data-loader.js';
+import { GRUModel } from './gru.js';
 
 class StockPredictionApp {
     constructor() {
         this.dataLoader = new DataLoader();
-        this.model = new GRUModel();
+        this.model = null;
         this.trainingData = null;
         this.isTraining = false;
-        this.lossChart = null;
+        this.chart = null;
+        this.initializeUI();
+    }
+
+    initializeUI() {
+        // File input handler
+        document.getElementById('csvFile').addEventListener('change', (e) => {
+            this.handleFileUpload(e.target.files[0]);
+        });
+
+        // Train button handler
+        document.getElementById('trainBtn').addEventListener('click', () => {
+            this.startTraining();
+        });
+
+        // Save/Load button handlers
+        document.getElementById('saveModel').addEventListener('click', () => {
+            this.saveModel();
+        });
+
+        document.getElementById('loadModel').addEventListener('click', () => {
+            this.loadModel();
+        });
+
+        // Initialize chart
+        this.initializeChart();
+    }
+
+    async handleFileUpload(file) {
+        try {
+            this.updateStatus('Loading CSV file...');
+            await this.dataLoader.loadCSV(file);
+            this.updateStatus('CSV loaded successfully. Ready to train.');
+            document.getElementById('trainBtn').disabled = false;
+        } catch (error) {
+            this.updateStatus(`Error loading file: ${error.message}`, 'error');
+        }
+    }
+
+    async startTraining() {
+        if (this.isTraining) return;
+
+        try {
+            this.isTraining = true;
+            this.updateStatus('Preparing training data...');
+            
+            // Prepare sequences
+            this.trainingData = this.dataLoader.prepareSequences();
+            
+            const { X_train, y_train, X_test, y_test, trainSize, testSize } = this.trainingData;
+            
+            this.updateStatus(`Training on ${trainSize} samples, testing on ${testSize} samples`);
+            
+            // Build model
+            this.model = new GRUModel(
+                this.dataLoader.sequenceLength,
+                this.dataLoader.featureColumns.length
+            );
+            this.model.buildModel();
+
+            // Setup training callbacks
+            const trainingCallbacks = {
+                onEpochEnd: (epoch, logs) => {
+                    this.updateTrainingProgress(epoch, logs);
+                    this.updateChart(logs);
+                },
+                onTrainEnd: () => {
+                    this.trainingComplete();
+                }
+            };
+
+            // Start training
+            const epochs = parseInt(document.getElementById('epochs').value) || 50;
+            await this.model.train(X_train, y_train, X_test, y_test, epochs, trainingCallbacks);
+
+        } catch (error) {
+            this.updateStatus(`Training error: ${error.message}`, 'error');
+            this.isTraining = false;
+        }
+    }
+
+    updateTrainingProgress(epoch, logs) {
+        const status = `Epoch ${epoch + 1} - Loss: ${logs.loss.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}`;
+        this.updateStatus(status);
         
-        this.initializeEventListeners();
-        this.setupCharts();
+        // Update progress bar if exists
+        const progressBar = document.getElementById('trainingProgress');
+        if (progressBar) {
+            const epochsTotal = parseInt(document.getElementById('epochs').value) || 50;
+            const progress = ((epoch + 1) / epochsTotal) * 100;
+            progressBar.value = progress;
+        }
     }
 
-    initializeEventListeners() {
-        document.getElementById('loadData').addEventListener('click', () => this.loadData());
-        document.getElementById('trainModel').addEventListener('click', () => this.trainModel());
-        document.getElementById('stopTraining').addEventListener('click', () => this.stopTraining());
-        document.getElementById('saveModel').addEventListener('click', () => this.saveModel());
-        document.getElementById('loadModel').addEventListener('click', () => this.loadModel());
+    updateChart(logs) {
+        if (!this.chart) return;
+
+        // Add data points to chart
+        this.chart.data.labels.push(this.chart.data.labels.length + 1);
+        this.chart.data.datasets[0].data.push(logs.loss);
+        this.chart.data.datasets[1].data.push(logs.val_loss);
+        
+        // Limit data points to prevent memory issues
+        if (this.chart.data.labels.length > 100) {
+            this.chart.data.labels.shift();
+            this.chart.data.datasets[0].data.shift();
+            this.chart.data.datasets[1].data.shift();
+        }
+        
+        this.chart.update('none');
     }
 
-    setupCharts() {
-        const ctx = document.getElementById('lossChart').getContext('2d');
-        this.lossChart = new Chart(ctx, {
+    initializeChart() {
+        const ctx = document.getElementById('trainingChart').getContext('2d');
+        this.chart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
                 datasets: [
                     {
                         label: 'Training Loss',
-                        borderColor: '#0066cc',
-                        backgroundColor: 'rgba(0, 102, 204, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        data: []
+                        borderColor: 'rgb(75, 192, 192)',
+                        data: [],
+                        fill: false
                     },
                     {
                         label: 'Validation Loss',
-                        borderColor: '#00cc66',
-                        backgroundColor: 'rgba(0, 204, 102, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        data: []
+                        borderColor: 'rgb(255, 99, 132)',
+                        data: [],
+                        fill: false
                     }
                 ]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
                 scales: {
                     x: {
+                        display: true,
                         title: {
                             display: true,
-                            text: 'Epoch',
-                            color: '#fff'
-                        },
-                        grid: { color: '#333' },
-                        ticks: { color: '#fff' }
+                            text: 'Epoch'
+                        }
                     },
                     y: {
+                        display: true,
                         title: {
                             display: true,
-                            text: 'Loss (Binary Crossentropy)',
-                            color: '#fff'
+                            text: 'Loss'
                         },
-                        grid: { color: '#333' },
-                        ticks: { color: '#fff' }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        labels: { color: '#fff' }
-                    },
-                    title: {
-                        display: true,
-                        text: 'Training Progress',
-                        color: '#fff',
-                        font: { size: 16 }
+                        type: 'logarithmic'
                     }
                 }
             }
         });
     }
 
-    async loadData() {
-        const fileInput = document.getElementById('csvFile');
-        const file = fileInput.files[0];
+    trainingComplete() {
+        this.isTraining = false;
+        this.updateStatus('Training completed!');
         
-        if (!file) {
-            this.updateStatus('fileStatus', 'Please select a CSV file', 'error');
-            return;
+        // Enable prediction
+        document.getElementById('predictBtn').disabled = false;
+        
+        // Show model summary
+        if (this.model && this.model.model) {
+            console.log('Model summary:');
+            this.model.model.summary();
         }
-
-        try {
-            this.updateStatus('fileStatus', 'Loading CSV file...', 'info');
-            await this.dataLoader.loadCSV(file);
-            this.updateStatus('fileStatus', 'CSV file loaded successfully! Ready for training.', 'success');
-            document.getElementById('trainModel').disabled = false;
-        } catch (error) {
-            this.updateStatus('fileStatus', `Error loading CSV: ${error.message}`, 'error');
-            console.error('Load error:', error);
-        }
-    }
-
-    async trainModel() {
-        if (this.isTraining) {
-            this.updateStatus('trainingStatus', 'Training already in progress', 'error');
-            return;
-        }
-
-        if (!this.dataLoader.data) {
-            this.updateStatus('trainingStatus', 'Please load CSV data first', 'error');
-            return;
-        }
-
-        try {
-            this.isTraining = true;
-            this.setTrainingUIState(true);
-            
-            const sequenceLength = parseInt(document.getElementById('sequenceLength').value);
-            const epochs = parseInt(document.getElementById('epochs').value);
-            const batchSize = parseInt(document.getElementById('batchSize').value);
-            const learningRate = parseFloat(document.getElementById('learningRate').value);
-
-            this.updateStatus('trainingStatus', 'Preparing data...', 'info');
-            
-            if (this.trainingData) {
-                this.disposeTrainingData();
-            }
-
-            this.trainingData = this.dataLoader.prepareData(sequenceLength);
-            
-            this.updateStatus('trainingStatus', 'Building model...', 'info');
-            this.model.buildModel(
-                sequenceLength, 
-                this.trainingData.featureNames.length, 
-                this.trainingData.featureNames.length, 
-                learningRate
-            );
-
-            this.updateStatus('trainingStatus', 'Starting training...', 'info');
-            this.lossChart.data.labels = [];
-            this.lossChart.data.datasets[0].data = [];
-            this.lossChart.data.datasets[1].data = [];
-            this.lossChart.update();
-            
-            const history = await this.model.trainModel(
-                this.trainingData.X_train,
-                this.trainingData.y_train,
-                this.trainingData.X_test,
-                this.trainingData.y_test,
-                epochs,
-                batchSize,
-                {
-                    onEpochEnd: (epoch, logs, history) => {
-                        const progress = ((epoch + 1) / epochs) * 100;
-                        document.getElementById('trainingProgress').style.width = `${progress}%`;
-                        
-                        this.updateStatus('trainingStatus', 
-                            `Epoch ${epoch + 1}/${epochs} - Loss: ${logs.loss.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}, Acc: ${logs.acc?.toFixed(4)}`, 
-                            'info'
-                        );
-                        
-                        this.updateLossChart(history);
-                    }
-                }
-            );
-
-            await this.model.saveWeights();
-            document.getElementById('saveModel').disabled = false;
-            document.getElementById('loadModel').disabled = false;
-            
-            this.updateStatus('trainingStatus', 
-                `Training completed! Final Loss: ${history.loss[history.loss.length-1].toFixed(4)}, Val Loss: ${history.val_loss[history.val_loss.length-1].toFixed(4)}`, 
-                'success'
-            );
-
-        } catch (error) {
-            this.updateStatus('trainingStatus', `Training error: ${error.message}`, 'error');
-            console.error('Training error:', error);
-        } finally {
-            this.isTraining = false;
-            this.setTrainingUIState(false);
-            document.getElementById('trainingProgress').style.width = '0%';
-        }
-    }
-
-    updateLossChart(history) {
-        this.lossChart.data.labels = history.epochs;
-        this.lossChart.data.datasets[0].data = history.loss;
-        this.lossChart.data.datasets[1].data = history.val_loss;
-        this.lossChart.update();
     }
 
     async saveModel() {
+        if (!this.model) {
+            this.updateStatus('No model to save', 'error');
+            return;
+        }
+        
         try {
-            this.updateStatus('resultsStatus', 'Saving model...', 'info');
             await this.model.saveModel();
-            this.updateStatus('resultsStatus', 'Model saved successfully!', 'success');
+            this.updateStatus('Model saved successfully!');
         } catch (error) {
-            this.updateStatus('resultsStatus', `Error saving model: ${error.message}`, 'error');
+            this.updateStatus(`Error saving model: ${error.message}`, 'error');
         }
     }
 
     async loadModel() {
         try {
-            this.updateStatus('resultsStatus', 'Loading model...', 'info');
+            this.model = new GRUModel();
             const success = await this.model.loadModel();
+            
             if (success) {
-                this.updateStatus('resultsStatus', 'Model loaded successfully from browser storage!', 'success');
-                document.getElementById('saveModel').disabled = false;
+                this.updateStatus('Model loaded successfully!');
+                document.getElementById('predictBtn').disabled = false;
             } else {
-                this.updateStatus('resultsStatus', 'No saved model found. Please train a model first.', 'error');
+                this.updateStatus('No saved model found', 'warning');
             }
         } catch (error) {
-            this.updateStatus('resultsStatus', `Error loading model: ${error.message}`, 'error');
+            this.updateStatus(`Error loading model: ${error.message}`, 'error');
         }
     }
 
-    setTrainingUIState(training) {
-        document.getElementById('trainModel').disabled = training;
-        document.getElementById('stopTraining').disabled = !training;
-        document.getElementById('loadData').disabled = training;
-    }
-
-    stopTraining() {
-        if (this.isTraining) {
-            this.model.stopTraining();
-            this.updateStatus('trainingStatus', 'Training stopped by user', 'info');
+    updateStatus(message, type = 'info') {
+        const statusElement = document.getElementById('status');
+        statusElement.textContent = message;
+        
+        // Reset classes
+        statusElement.className = 'status';
+        if (type === 'error') {
+            statusElement.classList.add('error');
+        } else if (type === 'warning') {
+            statusElement.classList.add('warning');
         }
-    }
-
-    updateStatus(elementId, message, type) {
-        const element = document.getElementById(elementId);
-        element.textContent = message;
-        element.className = `status ${type}`;
-    }
-
-    disposeTrainingData() {
-        if (this.trainingData) {
-            Object.values(this.trainingData).forEach(tensor => {
-                if (tensor && tensor.dispose && tensor instanceof tf.Tensor) {
-                    tensor.dispose();
-                }
-            });
-            this.trainingData = null;
-        }
+        
+        console.log(`Status: ${message}`);
     }
 
     dispose() {
-        this.model.dispose();
-        this.dataLoader.dispose();
-        this.disposeTrainingData();
+        if (this.dataLoader) {
+            this.dataLoader.dispose();
+        }
+        if (this.model) {
+            this.model.dispose();
+        }
+        if (this.trainingData) {
+            Object.values(this.trainingData).forEach(tensor => {
+                if (tensor && tensor.dispose) tensor.dispose();
+            });
+        }
     }
 }
 
+// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new StockPredictionApp();
 });
