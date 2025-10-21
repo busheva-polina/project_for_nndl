@@ -170,24 +170,6 @@
             margin-top: 10px;
         }
         
-        .feature-importance {
-            background: var(--surface);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        }
-        
-        .feature-list {
-            list-style: none;
-            margin-top: 15px;
-        }
-        
-        .feature-list li {
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
         .charts-container {
             display: grid;
             grid-template-columns: 1fr;
@@ -228,16 +210,16 @@
         </header>
         
         <section class="upload-section">
-            <h2>1. Upload Market Data</h2>
+            <h2>1. Upload Market Data CSV</h2>
             <div class="file-input-wrapper">
                 <input type="file" id="csvFile" accept=".csv" />
             </div>
-            <button id="trainBtn" class="btn" disabled>Start Training</button>
-            <div id="status" class="status"></div>
+            <button id="trainBtn" class="btn" disabled>Start Training (30 Epochs)</button>
+            <div id="status" class="status">Please upload a CSV file to begin</div>
         </section>
         
         <section class="training-section">
-            <h2>2. Model Training</h2>
+            <h2>2. Training Progress</h2>
             <div class="progress-bar">
                 <div id="trainingProgress" class="progress">0%</div>
             </div>
@@ -255,13 +237,6 @@
                     <div id="currentValLoss" class="metric-value">-</div>
                 </div>
             </div>
-        </section>
-        
-        <section class="feature-importance">
-            <h2>Top Predictive Features for WTI</h2>
-            <ul id="featureImportance" class="feature-list">
-                <li>Features will be displayed after model build</li>
-            </ul>
         </section>
         
         <section class="metrics-grid">
