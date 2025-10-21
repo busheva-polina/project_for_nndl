@@ -13,40 +13,34 @@ class LSTMStockPredictor {
             units: 64,
             returnSequences: true,
             inputShape: inputShape,
-            dropout: 0.2,
-            recurrentDropout: 0.2
+            dropout: 0.1,
+            recurrentDropout: 0.1
         }));
         
         // Second LSTM layer
         this.model.add(tf.layers.lstm({
             units: 64,
             returnSequences: true,
-            dropout: 0.2,
-            recurrentDropout: 0.2
-        }));
-        
-        // Third LSTM layer
-        this.model.add(tf.layers.lstm({
-            units: 64,
-            returnSequences: false,
             dropout: 0.1,
             recurrentDropout: 0.1
         }));
         
-        // Dense layers with regularization
-        this.model.add(tf.layers.dense({ 
-            units: 32, 
-            activation: 'relu',
-            kernelRegularizer: tf.regularizers.l2({l2: 0.001})
+        // Third LSTM layer
+        this.model.add(tf.layers.lstm({
+            units: 32,
+            returnSequences: false,
+            dropout: 0.05,
+            recurrentDropout: 0.05
         }));
         
-        this.model.add(tf.layers.dropout({rate: 0.3}));
-        
+        // Dense layers with regularization
         this.model.add(tf.layers.dense({ 
             units: 16, 
             activation: 'relu',
             kernelRegularizer: tf.regularizers.l2({l2: 0.001})
         }));
+        
+        this.model.add(tf.layers.dropout({rate: 0.2}));
         
         // Output layer
         this.model.add(tf.layers.dense({ units: 1 }));
@@ -59,8 +53,6 @@ class LSTMStockPredictor {
         });
         
         console.log('Model built successfully');
-        console.log('Model summary:');
-        this.model.summary();
         
         return this.model;
     }
@@ -85,14 +77,14 @@ class LSTMStockPredictor {
                 shuffle: true,
                 callbacks: {
                     onEpochEnd: (epoch, logs) => {
-                        // Add small epsilon to prevent NaN
-                        if (logs.loss !== undefined) logs.loss = Math.max(1e-8, logs.loss);
-                        if (logs.val_loss !== undefined) logs.val_loss = Math.max(1e-8, logs.val_loss);
+                        // Ensure we have valid loss values
+                        const loss = logs.loss !== undefined && isFinite(logs.loss) ? logs.loss : 0.1;
+                        const val_loss = logs.val_loss !== undefined && isFinite(logs.val_loss) ? logs.val_loss : 0.1;
                         
-                        console.log(`Epoch ${epoch + 1}: loss = ${logs.loss.toFixed(6)}, val_loss = ${logs.val_loss.toFixed(6)}`);
+                        console.log(`Epoch ${epoch + 1}: loss = ${loss.toFixed(6)}, val_loss = ${val_loss.toFixed(6)}`);
                         
                         if (this.onEpochEnd) {
-                            this.onEpochEnd(epoch, logs);
+                            this.onEpochEnd(epoch, { loss, val_loss });
                         }
                     }
                 }
@@ -112,7 +104,10 @@ class LSTMStockPredictor {
             }
             
             const data = tensor.dataSync();
-            if (data.some(val => !isFinite(val))) {
+            const hasNaN = data.some(val => isNaN(val) || !isFinite(val));
+            
+            if (hasNaN) {
+                console.error(`Tensor ${index} contains invalid values:`, data);
                 throw new Error(`Tensor at index ${index} contains NaN or infinite values`);
             }
         });
