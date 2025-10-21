@@ -1,30 +1,33 @@
-class GRUModel {
+import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm';
+
+export class LSTMModel {
     constructor(sequenceLength = 30, featureCount = 3) {
         this.sequenceLength = sequenceLength;
         this.featureCount = featureCount;
         this.model = null;
         this.trainingHistory = {
             loss: [],
-            valLoss: []
+            valLoss: [],
+            epochs: []
         };
     }
 
     buildModel() {
         this.model = tf.sequential({
             layers: [
-                tf.layers.gru({
+                tf.layers.lstm({
                     units: 50,
                     returnSequences: true,
                     inputShape: [this.sequenceLength, this.featureCount]
                 }),
                 tf.layers.dropout({ rate: 0.2 }),
-                tf.layers.gru({
+                tf.layers.lstm({
                     units: 50,
                     returnSequences: false
                 }),
                 tf.layers.dropout({ rate: 0.2 }),
                 tf.layers.dense({ units: 25, activation: 'relu' }),
-                tf.layers.dense({ units: 1, activation: 'linear' })
+                tf.layers.dense({ units: 1 })
             ]
         });
 
@@ -34,38 +37,38 @@ class GRUModel {
             metrics: ['mse']
         });
 
-        console.log('GRU Model built successfully');
-        this.model.summary();
+        console.log('LSTM model built successfully');
+        return this.model;
     }
 
-    async train(X_train, y_train, X_test, y_test, epochs = 100, batchSize = 32, progressCallback = null) {
+    async train(X_train, y_train, X_test, y_test, epochs = 100, callbacks = {}) {
         if (!this.model) {
             throw new Error('Model not built. Call buildModel() first.');
         }
 
-        this.trainingHistory = { loss: [], valLoss: [] };
+        const onEpochEnd = (epoch, logs) => {
+            this.trainingHistory.loss.push(logs.loss);
+            this.trainingHistory.valLoss.push(logs.val_loss);
+            this.trainingHistory.epochs.push(epoch + 1);
 
-        await this.model.fit(X_train, y_train, {
+            if (callbacks.onEpochEnd) {
+                callbacks.onEpochEnd(epoch, logs, this.trainingHistory);
+            }
+        };
+
+        const history = await this.model.fit(X_train, y_train, {
             epochs: epochs,
-            batchSize: batchSize,
+            batchSize: 32,
             validationData: [X_test, y_test],
             callbacks: {
-                onEpochEnd: async (epoch, logs) => {
-                    this.trainingHistory.loss.push(logs.loss);
-                    this.trainingHistory.valLoss.push(logs.val_loss);
-                    
-                    if (progressCallback) {
-                        const progress = ((epoch + 1) / epochs) * 100;
-                        progressCallback(progress, epoch + 1, logs);
-                    }
-
-                    // Prevent memory leaks
-                    await tf.nextFrame();
-                }
-            }
+                onEpochEnd: onEpochEnd.bind(this),
+                onTrainBegin: callbacks.onTrainBegin,
+                onTrainEnd: callbacks.onTrainEnd
+            },
+            verbose: 0
         });
 
-        console.log('Training completed');
+        return history;
     }
 
     async predict(X) {
@@ -79,27 +82,25 @@ class GRUModel {
         if (!this.model) {
             throw new Error('No model to save');
         }
-        
-        const saveResult = await this.model.save('indexeddb://gru-stock-model');
+
+        const saveResult = await this.model.save('indexeddb://wti-prediction-model');
         console.log('Model saved successfully');
         return saveResult;
     }
 
     async loadModel() {
         try {
-            this.model = await tf.loadLayersModel('indexeddb://gru-stock-model');
+            this.model = await tf.loadLayersModel('indexeddb://wti-prediction-model');
             console.log('Model loaded successfully');
-            
-            // Update sequence length and feature count from loaded model
-            const inputShape = this.model.layers[0].batchInputShape;
-            this.sequenceLength = inputShape[1];
-            this.featureCount = inputShape[2];
-            
             return true;
         } catch (error) {
-            console.warn('No saved model found or error loading model:', error);
+            console.log('No saved model found:', error.message);
             return false;
         }
+    }
+
+    getTrainingHistory() {
+        return this.trainingHistory;
     }
 
     dispose() {
@@ -108,10 +109,9 @@ class GRUModel {
         }
     }
 
-    getTrainingHistory() {
-        return this.trainingHistory;
+    summary() {
+        if (this.model) {
+            this.model.summary();
+        }
     }
 }
-
-// Export for use in other modules
-window.GRUModel = GRUModel;
