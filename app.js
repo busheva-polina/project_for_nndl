@@ -9,11 +9,9 @@ class StockPredictionApp {
     }
 
     initializeUI() {
-        // File input handler
         const fileInput = document.getElementById('csvFile');
         const trainBtn = document.getElementById('trainBtn');
-        const statusDiv = document.getElementById('status');
-        const progressDiv = document.getElementById('progress');
+        const featuresList = document.getElementById('featuresList');
 
         fileInput.addEventListener('change', (e) => {
             this.handleFileSelect(e);
@@ -22,6 +20,19 @@ class StockPredictionApp {
         trainBtn.addEventListener('click', () => {
             this.startTraining();
         });
+
+        const featureNames = [
+            'WTI (Target)',
+            'Gold Futures', 
+            'US Dollar Index Futures', 
+            'US 10 Year Bond Yield', 
+            'S&P 500', 
+            'Dow Jones Utility Average'
+        ];
+        
+        featuresList.innerHTML = featureNames.map(feature => 
+            `<div class="feature-item">${feature}</div>`
+        ).join('');
     }
 
     async handleFileSelect(event) {
@@ -29,9 +40,10 @@ class StockPredictionApp {
         if (!file) return;
 
         try {
-            this.updateStatus('Loading CSV data...');
+            this.updateStatus('Loading CSV data...', 'info');
             await this.dataLoader.loadCSV(file);
-            this.updateStatus('Data loaded successfully. Ready to train.');
+            this.updateStatus('Data loaded successfully. Ready to train.', 'success');
+            document.getElementById('trainBtn').disabled = false;
         } catch (error) {
             this.updateStatus(`Error loading file: ${error.message}`, 'error');
         }
@@ -43,18 +55,16 @@ class StockPredictionApp {
         try {
             this.isTraining = true;
             this.trainingLogs = [];
-            this.updateStatus('Preparing data...');
+            this.updateStatus('Preparing data...', 'info');
+            document.getElementById('trainBtn').disabled = true;
             
-            // Prepare data
             const { X_train, y_train, X_test, y_test, featureNames } = this.dataLoader.prepareData();
             
-            this.updateStatus(`Data prepared. Training samples: ${X_train.shape[0]}, Test samples: ${X_test.shape[0]}`);
+            this.updateStatus(`Data prepared. Training samples: ${X_train.shape[0]}, Test samples: ${X_test.shape[0]}`, 'info');
             
-            // Build model
-            this.updateStatus('Building LSTM model...');
+            this.updateStatus('Building LSTM model...', 'info');
             this.predictor.buildModel([X_train.shape[1], X_train.shape[2]]);
             
-            // Set up training callbacks
             this.predictor.onEpochEnd = (epoch, logs) => {
                 this.trainingLogs.push({
                     epoch: epoch + 1,
@@ -66,20 +76,16 @@ class StockPredictionApp {
                 this.plotTrainingHistory();
             };
             
-            // Train model
-            this.updateStatus('Starting training...');
+            this.updateStatus('Starting training...', 'info');
             await this.predictor.trainModel(X_train, y_train, X_test, y_test, 40);
             
-            // Make predictions
-            this.updateStatus('Making predictions...');
+            this.updateStatus('Making predictions...', 'info');
             const predictions = await this.predictor.predict(X_test);
             
-            // Visualize results
             this.plotPredictions(y_test, predictions, this.dataLoader.scalers.WTI);
             
-            this.updateStatus('Training completed successfully!');
+            this.updateStatus('Training completed successfully!', 'success');
             
-            // Clean up tensors
             X_train.dispose();
             y_train.dispose();
             X_test.dispose();
@@ -91,6 +97,7 @@ class StockPredictionApp {
             console.error(error);
         } finally {
             this.isTraining = false;
+            document.getElementById('trainBtn').disabled = false;
         }
     }
 
@@ -104,9 +111,11 @@ class StockPredictionApp {
         const progressDiv = document.getElementById('progress');
         const percent = (epoch / totalEpochs) * 100;
         progressDiv.innerHTML = `
-            <div>Epoch ${epoch}/${totalEpochs}</div>
-            <div>Loss: ${logs.loss.toFixed(4)}</div>
-            <div>Val Loss: ${logs.val_loss.toFixed(4)}</div>
+            <div class="progress-info">
+                <span>Epoch ${epoch}/${totalEpochs}</span>
+                <span>Loss: ${logs.loss ? logs.loss.toFixed(4) : 'N/A'}</span>
+                <span>Val Loss: ${logs.val_loss ? logs.val_loss.toFixed(4) : 'N/A'}</span>
+            </div>
             <progress value="${percent}" max="100"></progress>
         `;
     }
@@ -124,7 +133,7 @@ class StockPredictionApp {
             type: 'scatter',
             mode: 'lines',
             name: 'Training Loss',
-            line: { color: 'blue' }
+            line: { color: '#00a8ff', width: 3 }
         };
 
         const trace2 = {
@@ -133,24 +142,34 @@ class StockPredictionApp {
             type: 'scatter',
             mode: 'lines',
             name: 'Validation Loss',
-            line: { color: 'red' }
+            line: { color: '#e84118', width: 3 }
         };
 
         const layout = {
             title: 'Training and Validation Loss',
-            xaxis: { title: 'Epoch' },
-            yaxis: { title: 'Mean Squared Error' }
+            xaxis: { 
+                title: 'Epoch',
+                gridcolor: '#2f3640',
+                color: '#f5f6fa'
+            },
+            yaxis: { 
+                title: 'Mean Squared Error',
+                gridcolor: '#2f3640',
+                color: '#f5f6fa'
+            },
+            paper_bgcolor: '#1e272e',
+            plot_bgcolor: '#1e272e',
+            font: { color: '#f5f6fa' },
+            legend: { font: { color: '#f5f6fa' } }
         };
 
-        Plotly.newPlot('lossChart', [trace1, trace2], layout);
+        Plotly.react('lossChart', [trace1, trace2], layout);
     }
 
     plotPredictions(actual, predicted, scaler) {
-        // Convert tensors to arrays
         const actualData = actual.dataSync();
         const predictedData = predicted.dataSync();
         
-        // Unscale values
         const actualUnscaled = this.dataLoader.unscaleValues(Array.from(actualData), 'WTI');
         const predictedUnscaled = this.dataLoader.unscaleValues(Array.from(predictedData), 'WTI');
         
@@ -162,7 +181,7 @@ class StockPredictionApp {
             type: 'scatter',
             mode: 'lines',
             name: 'Actual WTI',
-            line: { color: 'blue' }
+            line: { color: '#00a8ff', width: 2 }
         };
 
         const trace2 = {
@@ -171,16 +190,28 @@ class StockPredictionApp {
             type: 'scatter',
             mode: 'lines',
             name: 'Predicted WTI',
-            line: { color: 'red' }
+            line: { color: '#fbc531', width: 2 }
         };
 
         const layout = {
-            title: 'WTI Crude Oil Price Prediction',
-            xaxis: { title: 'Time Steps' },
-            yaxis: { title: 'Price' }
+            title: 'WTI Crude Oil Price - Actual vs Predicted',
+            xaxis: { 
+                title: 'Time Steps',
+                gridcolor: '#2f3640',
+                color: '#f5f6fa'
+            },
+            yaxis: { 
+                title: 'Price (USD)',
+                gridcolor: '#2f3640',
+                color: '#f5f6fa'
+            },
+            paper_bgcolor: '#1e272e',
+            plot_bgcolor: '#1e272e',
+            font: { color: '#f5f6fa' },
+            legend: { font: { color: '#f5f6fa' } }
         };
 
-        Plotly.newPlot('predictionChart', [trace1, trace2], layout);
+        Plotly.react('predictionChart', [trace1, trace2], layout);
     }
 
     dispose() {
@@ -189,7 +220,6 @@ class StockPredictionApp {
     }
 }
 
-// Initialize app when page loads
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new StockPredictionApp();
