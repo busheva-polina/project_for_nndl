@@ -65,8 +65,6 @@ class GRUModel {
         this.trainingStopRequested = false;
         this.history = { loss: [], val_loss: [], epochs: [] };
         
-        const batchCount = Math.ceil(X_train.shape[0] / batchSize);
-        
         try {
             await this.model.fit(X_train, y_train, {
                 epochs: epochs,
@@ -100,83 +98,4 @@ class GRUModel {
                         }
                     },
                     onBatchEnd: async (batch, logs) => {
-                        if (callbacks.onBatchEnd) {
-                            callbacks.onBatchEnd(batch, batchCount, logs);
-                        }
-                    }
-                },
-                shuffle: true,
-                validationSplit: 0
-            });
-        } catch (error) {
-            console.error('Training error:', error);
-            throw error;
-        } finally {
-            this.isTraining = false;
-        }
-
-        return this.history;
-    }
-
-    async predict(X) {
-        if (!this.model) {
-            throw new Error('Model not built or trained');
-        }
-        return this.model.predict(X);
-    }
-
-    async evaluate(X_test, y_test) {
-        if (!this.model) {
-            throw new Error('Model not built or trained');
-        }
-        return this.model.evaluate(X_test, y_test);
-    }
-
-    async saveModel() {
-        if (!this.model) {
-            throw new Error('No model to save');
-        }
-        
-        const saveResult = await this.model.save('downloads://multi-stock-gru-model');
-        return saveResult;
-    }
-
-    async loadModel() {
-        try {
-            this.model = await tf.loadLayersModel('indexeddb://multi-stock-gru-model');
-            console.log('Model loaded successfully from IndexedDB');
-            return true;
-        } catch (error) {
-            console.log('No saved model found in IndexedDB');
-            return false;
-        }
-    }
-
-    async saveWeights() {
-        if (!this.model) {
-            throw new Error('No model to save');
-        }
-        
-        const modelData = await this.model.save('indexeddb://multi-stock-gru-model');
-        return modelData;
-    }
-
-    stopTraining() {
-        this.trainingStopRequested = true;
-    }
-
-    dispose() {
-        if (this.model) {
-            this.model.dispose();
-            this.model = null;
-        }
-    }
-
-    summary() {
-        if (this.model) {
-            this.model.summary();
-        }
-    }
-}
-
-export default GRUModel;
+                        if (callbacks.onBatchEnd
