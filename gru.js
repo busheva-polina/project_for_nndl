@@ -1,4 +1,4 @@
-class LSTMModel {
+class GRUModel {
     constructor(inputShape) {
         this.model = null;
         this.inputShape = inputShape;
@@ -14,8 +14,8 @@ class LSTMModel {
     buildModel() {
         this.model = tf.sequential();
         
-        // First LSTM layer with dropout and recurrent dropout
-        this.model.add(tf.layers.lstm({
+        // First GRU layer with dropout and recurrent dropout
+        this.model.add(tf.layers.gru({
             units: 64,
             returnSequences: true,
             inputShape: this.inputShape,
@@ -23,8 +23,8 @@ class LSTMModel {
             recurrentDropout: 0.2
         }));
         
-        // Second LSTM layer with dropout
-        this.model.add(tf.layers.lstm({
+        // Second GRU layer with dropout
+        this.model.add(tf.layers.gru({
             units: 32,
             returnSequences: false,
             dropout: 0.1
